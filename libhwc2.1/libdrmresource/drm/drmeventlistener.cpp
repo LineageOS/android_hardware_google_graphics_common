@@ -21,6 +21,7 @@
 #include <drm/samsung_drm.h>
 
 #include <assert.h>
+#include <bits/epoll_event.h>
 #include <errno.h>
 #include <linux/netlink.h>
 #include <sys/socket.h>
