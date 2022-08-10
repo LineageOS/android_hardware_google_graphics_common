@@ -22,6 +22,7 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SHARED_LIBRARIES := libcutils libdrm liblog libutils libhardware
+LOCAL_HEADER_LIBRARIES += generated_kernel_headers
 
 LOCAL_PROPRIETARY_MODULE := true
 
@@ -75,6 +76,7 @@ LOCAL_SHARED_LIBRARIES += com.google.hardware.pixel.display-V4-ndk_platform \
 
 LOCAL_HEADER_LIBRARIES := libhardware_legacy_headers libbinder_headers google_hal_headers
 LOCAL_HEADER_LIBRARIES += libgralloc_headers
+LOCAL_HEADER_LIBRARIES += generated_kernel_headers
 
 LOCAL_STATIC_LIBRARIES += libVendorVideoApi
 LOCAL_STATIC_LIBRARIES += libjsoncpp
