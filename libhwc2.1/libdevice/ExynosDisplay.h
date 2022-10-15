@@ -150,6 +150,7 @@ enum class DispIdleTimerRequester : uint32_t {
     SF = 0,
     PIXEL_DISP,
     TEST,
+    LHBM,
     MAX,
 };
 
@@ -991,7 +992,7 @@ class ExynosDisplay {
          */
         int32_t getPreferredBootDisplayConfig(int32_t* outConfig);
 
-        virtual int32_t getPreferredDisplayConfigInternal(int32_t *outConfig);
+        virtual int32_t getPreferredDisplayConfigInternal(int32_t* outConfig);
 
         /* setAutoLowLatencyMode(displayToken, on)
          * Descriptor: HWC2_FUNCTION_SET_AUTO_LOW_LATENCY_MODE
@@ -1249,6 +1250,10 @@ class ExynosDisplay {
                     (mVsyncPeriod == mMinDisplayVsyncPeriod));
         }
 
+        // check if there are any dimmed layers
+        bool isMixedComposition();
+        bool isPriorFrameMixedCompostion() { return mPriorFrameMixedComposition; }
+
     private:
         bool skipStaticLayerChanged(ExynosCompositionInfo& compositionInfo);
 
@@ -1265,6 +1270,10 @@ class ExynosDisplay {
 
         // vsync period of peak refresh rate
         uint32_t mMinDisplayVsyncPeriod;
+
+        // track if the last frame is a mixed composition, to detect mixed
+        // composition to non-mixed composition transition.
+        bool mPriorFrameMixedComposition;
 
         /* Display hint to notify power hal */
         class PowerHalHintWorker : public Worker {

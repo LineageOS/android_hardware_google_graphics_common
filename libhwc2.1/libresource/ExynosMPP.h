@@ -166,6 +166,7 @@ enum {
     eMPPUnsupportedDIMLayer       =     1ULL << 30,
     eMPPUnsupportedDRM            =     1ULL << 31,
     eMPPUnsupportedDynamicMeta    =     1ULL << 32,
+    eMPPSatisfiedRestriction      =     1ULL << 33,
 };
 
 enum {

@@ -133,6 +133,7 @@ void BrightnessController::initBrightnessTable(const DrmDevice& drmDevice,
 
     // init to min before SF sets the brightness
     mDisplayWhitePointNits = cap->normal.nits.min;
+    mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
     mBrightnessIntfSupported = true;
 
     drmModeFreePropertyBlob(blob);
@@ -347,7 +348,12 @@ void BrightnessController::onClearDisplay() {
     mBrightnessFloatReq.reset(-1);
     mInstantHbmReq.reset(false);
 
-    mBrightnessLevel.reset(0);
+    mBrightnessLevel.store(0);
+    if (mBrightnessLevel.is_dirty()) {
+        applyBrightnessViaSysfs(mBrightnessLevel.get());
+    }
+    mDisplayWhitePointNits = 0;
+    mPrevDisplayWhitePointNits = 0;
     mGhbm.reset(HbmMode::OFF);
     mDimming.reset(false);
     mHbmDimming = false;
@@ -362,6 +368,7 @@ void BrightnessController::onClearDisplay() {
 int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
                               const DrmConnector& connector,
                               ExynosDisplayDrmInterface::DrmModeAtomicReq& drmReq,
+                              const bool mixedComposition,
                               bool& ghbmSync, bool& lhbmSync, bool& blSync) {
     int ret;
 
@@ -371,6 +378,17 @@ int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
 
     ATRACE_CALL();
     std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
+
+    bool sync = false;
+    if (mixedComposition && mPrevDisplayWhitePointNits > 0 && mDisplayWhitePointNits > 0) {
+        float diff = std::abs(mPrevDisplayWhitePointNits - mDisplayWhitePointNits);
+        float min = std::min(mPrevDisplayWhitePointNits, mDisplayWhitePointNits);
+        if (diff / min > kBrightnessSyncThreshold) {
+            sync = true;
+            ALOGD("%s: enable brightness sync for change from %f to %f", __func__,
+                  mPrevDisplayWhitePointNits, mDisplayWhitePointNits);
+        }
+    }
 
     if (mDimming.is_dirty()) {
         if ((ret = drmReq.atomicAddProperty(connector.id(), connector.dimming_on(),
@@ -437,9 +455,11 @@ int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
             } else {
                 mUncheckedBlRequest = true;
                 mPendingBl = mBrightnessLevel.get();
+                blSync = sync;
             }
         }
         mBrightnessLevel.clear_dirty();
+        mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
     }
 
     if (mGhbm.is_dirty() && mGhbmSupported) {
@@ -455,7 +475,7 @@ int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
                                             hbmEnum)) < 0) {
             ALOGE("%s: Fail to set hbm_mode property", __func__);
         } else {
-            ghbmSync = true;
+            ghbmSync = sync;
         }
         mGhbm.clear_dirty();
     }
@@ -705,6 +725,7 @@ int BrightnessController::applyBrightnessViaSysfs(uint32_t level) {
         {
             std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
             mBrightnessLevel.reset(level);
+            mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
             ALOGI("level=%d, DimmingOn=%d, Hbm=%d, LhbmOn=%d", level,
                   mDimming.get(), mGhbm.get(), mLhbm.get());
         }
@@ -765,6 +786,7 @@ void BrightnessController::dump(String8& result) {
                         mPendingGhbmStatus.load());
     result.appendFormat("\tdimming usage %d, hbm dimming %d, time us %d\n", mBrightnessDimmingUsage,
                         mHbmDimming, mHbmDimmingTimeUs);
-    result.appendFormat("\twhite point nits %f\n", mDisplayWhitePointNits);
+    result.appendFormat("\twhite point nits current %f, previous %f\n", mDisplayWhitePointNits,
+                        mPrevDisplayWhitePointNits);
     result.appendFormat("\n");
 }

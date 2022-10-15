@@ -3355,8 +3355,7 @@ bool ExynosDisplay::isFullScreenComposition() {
             dispRect.right = r.right;
     }
 
-    if ((dispRect.top != 0) || (dispRect.left != 0) ||
-            (dispRect.right != mXres) || (dispRect.bottom != mYres)) {
+    if ((dispRect.right != mXres) || (dispRect.bottom != mYres)) {
         ALOGD("invalid displayFrame disp=[%d %d %d %d] expected=%dx%d",
                 dispRect.left, dispRect.top, dispRect.right, dispRect.bottom,
                 mXres, mYres);
@@ -3370,6 +3369,7 @@ int32_t ExynosDisplay::presentDisplay(int32_t* outRetireFence) {
     ATRACE_CALL();
     gettimeofday(&updateTimeInfo.lastPresentTime, NULL);
 
+    const bool mixedComposition = isMixedComposition();
     // store this once here for the whole frame so it's consistent
     mUsePowerHints = usePowerHintSession();
     if (mUsePowerHints) {
@@ -3693,6 +3693,8 @@ int32_t ExynosDisplay::presentDisplay(int32_t* outRetireFence) {
         }
         mPowerHalHint.signalActualWorkDuration(duration + mValidationDuration.value_or(0));
     }
+
+    mPriorFrameMixedComposition = mixedComposition;
 
     return ret;
 err:
@@ -4059,9 +4061,7 @@ int32_t ExynosDisplay::setActiveConfigWithConstraints(hwc2_config_t config,
         }
 
         outTimeline->newVsyncAppliedTimeNanos = vsyncPeriodChangeConstraints->desiredTimeNanos;
-
-        // when switching between display group setActiveConfig directly
-        return setActiveConfigInternal(config, false);
+        outTimeline->refreshRequired = true;
     }
 
     if (needNotChangeConfig(config)) {
@@ -4070,7 +4070,15 @@ int32_t ExynosDisplay::setActiveConfigWithConstraints(hwc2_config_t config,
         return HWC2_ERROR_NONE;
     }
 
-    if (vsyncPeriodChangeConstraints->seamlessRequired) {
+    if ((mXres != mDisplayConfigs[config].width) || (mYres != mDisplayConfigs[config].height)) {
+        if ((mDisplayInterface->setActiveConfigWithConstraints(config, true)) != NO_ERROR) {
+            ALOGW("Mode change not possible");
+            return HWC2_ERROR_BAD_CONFIG;
+        }
+        mRenderingState = RENDERING_STATE_NONE;
+        setGeometryChanged(GEOMETRY_DISPLAY_RESOLUTION_CHANGED);
+        updateInternalDisplayConfigVariables(config, false);
+    } else if (vsyncPeriodChangeConstraints->seamlessRequired) {
         if ((mDisplayInterface->setActiveConfigWithConstraints(config, true)) != NO_ERROR) {
             DISPLAY_LOGD(eDebugDisplayConfig, "Case : Seamless is not possible");
             return HWC2_ERROR_SEAMLESS_NOT_POSSIBLE;
@@ -4339,6 +4347,11 @@ int32_t ExynosDisplay::setOutputBuffer( buffer_handle_t __unused buffer, int32_t
 
 int ExynosDisplay::clearDisplay(bool needModeClear) {
 
+    /* clear brightness state */
+    if (mBrightnessController) {
+        mBrightnessController->onClearDisplay();
+    }
+
     const int ret = mDisplayInterface->clearDisplay(needModeClear);
     if (ret)
         DISPLAY_LOGE("fail to clear display");
@@ -4351,9 +4364,6 @@ int ExynosDisplay::clearDisplay(bool needModeClear) {
     /* Update last retire fence */
     mLastRetireFence = fence_close(mLastRetireFence, this, FENCE_TYPE_RETIRE, FENCE_IP_DPP);
 
-    if (mBrightnessController) {
-        mBrightnessController->onClearDisplay();
-    }
     return ret;
 }
 
@@ -6010,4 +6020,13 @@ int32_t ExynosDisplay::setDebugRCDLayerEnabled(bool enable) {
 
 int32_t ExynosDisplay::getDisplayIdleTimerSupport(bool &outSupport) {
     return mDisplayInterface->getDisplayIdleTimerSupport(outSupport);
+}
+
+bool ExynosDisplay::isMixedComposition() {
+    for (size_t i = 0; i < mLayers.size(); i++) {
+        if (mLayers[i]->mBrightness < 1.0) {
+            return true;
+        }
+    }
+    return false;
 }

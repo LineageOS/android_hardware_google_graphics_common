@@ -236,7 +236,8 @@ void ComposerCommandEngine::executePresentOrValidateDisplay(
     int err;
     // First try to Present as is.
     if (mHal->hasCapability(Capability::SKIP_VALIDATE)) {
-        err = executePresentDisplay(display);
+        err = mResources->mustValidateDisplay(display) ? IComposerClient::EX_NOT_VALIDATED
+                                                       : executePresentDisplay(display);
         if (!err) {
             mWriter->setPresentOrValidateResult(display, PresentOrValidate::Result::Presented);
             return;
@@ -262,9 +263,7 @@ int ComposerCommandEngine::executePresentDisplay(int64_t display) {
     ndk::ScopedFileDescriptor presentFence;
     std::vector<int64_t> layers;
     std::vector<ndk::ScopedFileDescriptor> fences;
-    auto err = mResources->mustValidateDisplay(display)
-            ? IComposerClient::EX_NOT_VALIDATED
-            : mHal->presentDisplay(display, presentFence, &layers, &fences);
+    auto err = mHal->presentDisplay(display, presentFence, &layers, &fences);
     if (!err) {
         mWriter->setPresentFence(display, std::move(presentFence));
         mWriter->setReleaseFences(display, layers, std::move(fences));

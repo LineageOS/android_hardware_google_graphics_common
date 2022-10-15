@@ -1133,7 +1133,7 @@ int32_t ExynosResourceManager::validateLayer(uint32_t index, ExynosDisplay *disp
 }
 
 int32_t ExynosResourceManager::validateRCDLayer(const ExynosDisplay &display,
-                                                const ExynosLayer &layer,
+                                                const ExynosLayer &layer, const uint32_t layerIndex,
                                                 const exynos_image &srcImg,
                                                 const exynos_image &dstImg) {
     if (CC_UNLIKELY(srcImg.bufferHandle == NULL || srcImg.format != HAL_PIXEL_FORMAT_GOOGLE_R_8)) {
@@ -1151,6 +1151,11 @@ int32_t ExynosResourceManager::validateRCDLayer(const ExynosDisplay &display,
 
     // no scale
     if (srcImg.w != dstImg.w || srcImg.h != dstImg.h) {
+        return eMPPUnsupported;
+    }
+
+    // only support RCD Layers on the top
+    if (layerIndex != display.mLayers.size() - 1) {
         return eMPPUnsupported;
     }
 
@@ -1642,7 +1647,7 @@ int32_t ExynosResourceManager::assignLayers(ExynosDisplay * display, uint32_t pr
 
         // TODO: call validate function for RCD layer
         if (layer->mCompositionType == HWC2_COMPOSITION_DISPLAY_DECORATION &&
-            validateRCDLayer(*display, *layer, src_img, dst_img) == NO_ERROR) {
+            validateRCDLayer(*display, *layer, i, src_img, dst_img) == NO_ERROR) {
             layer->mValidateCompositionType = HWC2_COMPOSITION_DISPLAY_DECORATION;
             continue;
         }

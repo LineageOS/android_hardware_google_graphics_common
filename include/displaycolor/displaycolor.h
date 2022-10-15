@@ -34,7 +34,8 @@ using android::hardware::graphics::common::V1_2::PixelFormat;
 /**
  * hwc/displaycolor interface history
  *
- * 6.1.0.2022-05-18 Get calibrated serial number.
+ * 6.2.0.2022-05-18 Get calibrated serial number.
+ * 6.1.0.2022-04-29 dim solid color layer
  * 6.0.0.2022-02-22 Get whether dimming in linear.
  * 5.0.0.2022-02-17 Add layer dim ratio.
  * 4.0.0.2021-12-20 Get pixel format and dataspace of blending stage.
@@ -61,7 +62,7 @@ constexpr struct DisplayColorIntfVer {
 
 } kInterfaceVersion {
     6,
-    1,
+    2,
     0,
 };
 
@@ -115,12 +116,28 @@ struct DisplayInfo {
     DisplayBrightnessTable brightness_table;
 };
 
+struct Color {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t a;
+
+    bool operator==(const Color &rhs) const {
+        return r == rhs.r &&
+               g == rhs.g &&
+               b == rhs.b &&
+               a == rhs.a;
+    }
+};
+
 struct LayerColorData {
     bool operator==(const LayerColorData &rhs) const {
         return dataspace == rhs.dataspace && matrix == rhs.matrix &&
                static_metadata == rhs.static_metadata &&
                dynamic_metadata == rhs.dynamic_metadata &&
-               dim_ratio == rhs.dim_ratio;
+               dim_ratio == rhs.dim_ratio &&
+               is_solid_color_layer == rhs.is_solid_color_layer &&
+               (!is_solid_color_layer || solid_color == rhs.solid_color);
     }
 
     /**
@@ -230,6 +247,16 @@ struct LayerColorData {
      * @brief the layer's luminance dim ratio
      */
     float dim_ratio = 1.0f;
+
+    /**
+     * @brief is layer solid color
+     */
+    bool is_solid_color_layer;
+
+    /**
+     * @brief color for solid color layer
+     */
+    Color solid_color;
 };
 
 /**

@@ -548,9 +548,10 @@ int32_t ExynosLayer::setLayerDisplayFrame(hwc_rect_t frame) {
 }
 
 int32_t ExynosLayer::setLayerPlaneAlpha(float alpha) {
-
-    if (alpha < 0.0)
-        return HWC2_ERROR_BAD_LAYER;
+    if (alpha < 0.0f || alpha > 1.0f) {
+        ALOGE("%s: invalid alpha %f", __func__, alpha);
+        return HWC2_ERROR_BAD_PARAMETER;
+    }
 
     if ((mPlaneAlpha != alpha) && ((mPlaneAlpha == 0.0) || (alpha == 0.0)))
         setGeometryChanged(GEOMETRY_LAYER_IGNORE_CHANGED);

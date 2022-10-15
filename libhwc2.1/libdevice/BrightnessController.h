@@ -97,6 +97,7 @@ public:
     int prepareFrameCommit(ExynosDisplay& display,
                            const DrmConnector& connector,
                            ExynosDisplayDrmInterface::DrmModeAtomicReq& drmReq,
+                           const bool mixedComposition,
                            bool& ghbmSync, bool& lhbmSync, bool& blSync);
 
     bool isGhbmSupported() { return mGhbmSupported; }
@@ -181,6 +182,12 @@ public:
     static constexpr const char *kLocalHbmModeFileNode =
                 "/sys/class/backlight/panel%d-backlight/local_hbm_mode";
 private:
+    // sync brightness change for mixed composition when there is more than 50% luminance change.
+    // The percentage is calculated as:
+    //        (big_lumi - small_lumi) / small_lumi
+    // For mixed composition, if remove brightness animations, the minimum brightness jump is
+    // between nbm peak and hbm peak. 50% will cover known panels
+    static constexpr float kBrightnessSyncThreshold = 0.5f;
     // Worst case for panel with brightness range 2 nits to 1000 nits.
     static constexpr float kGhbmMinDimRatio = 0.002;
     static constexpr int32_t kHbmDimmingTimeUs = 5000000;
@@ -254,6 +261,7 @@ private:
 
     // Note IRC or dimming is not in consideration for now.
     float mDisplayWhitePointNits = 0;
+    float mPrevDisplayWhitePointNits = 0;
 
     std::function<void(void)> mUpdateDcLhbm;
 };
