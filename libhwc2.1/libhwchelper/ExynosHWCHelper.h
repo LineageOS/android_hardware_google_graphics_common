@@ -564,7 +564,10 @@ private:
 
 void writeFileNode(FILE *fd, int value);
 int32_t writeIntToFile(const char *file, uint32_t value);
-uint32_t getDisplayId(int32_t displayType, int32_t displayIndex = 0);
+constexpr uint32_t getDisplayId(int32_t displayType, int32_t displayIndex) {
+    return (displayType << DISPLAYID_MASK_LEN) | displayIndex;
+}
+
 int32_t load_png_image(const char *filepath, buffer_handle_t buffer);
 int readLineFromFile(const std::string &filename, std::string &out, char delim);
 

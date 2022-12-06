@@ -204,7 +204,8 @@ class ExynosDevice {
         uint32_t mDisplayMode;
 
         // Variable for fence tracer
-        std::map<int, HwcFenceInfo> mFenceInfos;
+        std::map<int, HwcFenceInfo> mFenceInfos GUARDED_BY(mFenceMutex);
+        std::mutex mFenceMutex;
 
         /**
          * This will be initialized with differnt class
@@ -332,6 +333,7 @@ class ExynosDevice {
         int32_t registerHwc3Callback(uint32_t descriptor, hwc2_callback_data_t callbackData,
                                      hwc2_function_pointer_t point);
         void onVsyncIdle(hwc2_display_t displayId);
+        bool isDispOffAsyncSupported() { return mDisplayOffAsync; };
 
     protected:
         void initDeviceInterface(uint32_t interfaceType);
@@ -345,29 +347,13 @@ class ExynosDevice {
         bool isCallbackRegisteredLocked(int32_t descriptor);
 
     public:
-        bool isLbeSupported();
-        void setLbeState(LbeState state);
-        void setLbeAmbientLight(int value);
-        LbeState getLbeState();
-
-        bool isLhbmSupported();
-        int32_t setLhbmState(bool enabled);
-        bool getLhbmState();
-        int setMinIdleRefreshRate(const int fps);
-        int setRefreshRateThrottle(const int delayMs);
-
-        bool isColorCalibratedByDevice();
-
-        PanelCalibrationStatus getPanelCalibrationStatus();
-
-    public:
         void enterToTUI() { mIsInTUI = true; };
         void exitFromTUI() { mIsInTUI = false; };
         bool isInTUI() { return mIsInTUI; };
 
     private:
-        bool mLbeSupported;
         bool mIsInTUI;
+        bool mDisplayOffAsync;
 };
 
 #endif //_EXYNOSDEVICE_H

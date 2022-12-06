@@ -38,8 +38,7 @@ using HistogramErrorCode = histogram::HistogramErrorCode;
 // Default implementation
 class Display : public BnDisplay {
 public:
-    Display(ExynosDevice *device)
-          : mDevice(device), mMediator(mDevice->getDisplay(HWC_DISPLAY_PRIMARY)) {}
+    Display(ExynosDisplay *display) : mDisplay(display), mMediator(display) {}
 
     ndk::ScopedAStatus isHbmSupported(bool *_aidl_return) override;
     ndk::ScopedAStatus setHbmState(HbmState state) override;
@@ -64,7 +63,7 @@ public:
 private:
     bool runMediator(const RoiRect roi, const Weight weight, const HistogramPos pos,
                        std::vector<char16_t> *histogrambuffer);
-    ExynosDevice *mDevice = nullptr;
+    ExynosDisplay *mDisplay = nullptr;
     histogram::HistogramMediator mMediator;
 };
 } // namespace display

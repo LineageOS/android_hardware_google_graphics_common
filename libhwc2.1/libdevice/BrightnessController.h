@@ -136,6 +136,10 @@ public:
 
     void dump(String8 &result);
 
+    void setOutdoorVisibility(LbeState state);
+
+    int updateCabcMode();
+
     struct BrightnessTable {
         float mBriStart;
         float mBriEnd;
@@ -193,13 +197,19 @@ private:
     static constexpr int32_t kHbmDimmingTimeUs = 5000000;
     static constexpr const char *kGlobalHbmModeFileNode =
                 "/sys/class/backlight/panel%d-backlight/hbm_mode";
+    static constexpr const char* kDimmingUsagePropName =
+            "vendor.display.%d.brightness.dimming.usage";
+    static constexpr const char* kDimmingHbmTimePropName =
+            "vendor.display.%d.brightness.dimming.hbm_time";
 
     int queryBrightness(float brightness, bool* ghbm = nullptr, uint32_t* level = nullptr,
                         float *nits = nullptr);
     void initBrightnessTable(const DrmDevice& device, const DrmConnector& connector);
     void initBrightnessSysfs();
+    void initCabcSysfs();
     void initDimmingUsage();
     int applyBrightnessViaSysfs(uint32_t level);
+    int applyCabcModeViaSysfs(uint8_t mode);
     int updateStates() REQUIRES(mBrightnessMutex);
     void dimmingThread();
     void processDimmingOff();
@@ -258,12 +268,21 @@ private:
     // sysfs path
     std::ofstream mBrightnessOfs;
     uint32_t mMaxBrightness = 0; // read from sysfs
+    std::ofstream mCabcModeOfs;
 
     // Note IRC or dimming is not in consideration for now.
     float mDisplayWhitePointNits = 0;
     float mPrevDisplayWhitePointNits = 0;
 
     std::function<void(void)> mUpdateDcLhbm;
+
+    // state for control CABC state
+    static constexpr const char* kLocalCabcModeFileNode =
+            "/sys/class/backlight/panel%d-backlight/cabc_mode";
+    std::recursive_mutex mCabcModeMutex;
+    bool mOutdoorVisibility GUARDED_BY(mCabcModeMutex) = false;
+    bool isHdrLayerOn() { return mHdrLayerState.get() != HdrLayerState::kHdrNone; }
+    CtrlValue<bool> mCabcMode GUARDED_BY(mCabcModeMutex);
 };
 
 #endif // _BRIGHTNESS_CONTROLLER_H_

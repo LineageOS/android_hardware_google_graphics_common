@@ -38,7 +38,7 @@ class ExynosDeviceDrmInterface : public ExynosDeviceInterface {
                                       public DrmPanelIdleEventHandler {
         public:
             void handleEvent(uint64_t timestamp_us) override;
-            void handleHistogramEvent(void *bin) override;
+            void handleHistogramEvent(uint32_t crtc_id, void *bin) override;
             void handleTUIEvent() override;
             void handleIdleEnterEvent(char const *event) override;
             void init(ExynosDevice *exynosDevice, DrmDevice *drmDevice);

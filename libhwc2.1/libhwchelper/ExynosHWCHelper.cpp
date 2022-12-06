@@ -825,6 +825,8 @@ void setFenceInfo(uint32_t fd, ExynosDisplay* display, HwcFdebugFenceType type, 
     if (!fence_valid(fd) || display == NULL) return;
 
     ExynosDevice* device = display->mDevice;
+
+    std::scoped_lock lock(device->mFenceMutex);
     HwcFenceInfo& info = device->mFenceInfos[fd];
     info.displayId = display->mDisplayId;
 
@@ -1100,10 +1102,6 @@ int32_t writeIntToFile(const char* file, uint32_t value) {
     writeFileNode(fd, value);
     fclose(fd);
     return 0;
-}
-
-uint32_t getDisplayId(int32_t displayType, int32_t displayIndex) {
-    return (displayType << DISPLAYID_MASK_LEN) | displayIndex;
 }
 
 int32_t load_png_image(const char* filepath, buffer_handle_t buffer) {

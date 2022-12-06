@@ -466,7 +466,7 @@ int32_t ExynosHWCService::setRefreshRateThrottle(uint32_t display_id, int32_t de
                 ->setRefreshRateThrottleNanos(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                                       std::chrono::milliseconds(delayMs))
                                                       .count(),
-                                              DispIdleTimerRequester::TEST);
+                                              VrrThrottleRequester::TEST);
     }
 
     return -EINVAL;

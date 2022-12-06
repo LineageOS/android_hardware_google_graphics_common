@@ -1926,6 +1926,8 @@ int32_t ExynosDisplayDrmInterface::clearDisplayPlanes(DrmModeAtomicReq &drmReq)
 
 int32_t ExynosDisplayDrmInterface::clearDisplay(bool needModeClear)
 {
+    ExynosDevice *exynosDevice = mExynosDisplay->mDevice;
+    const bool isAsyncOff = needModeClear && exynosDevice->isDispOffAsyncSupported();
     int ret = NO_ERROR;
     DrmModeAtomicReq drmReq(this);
 
@@ -1946,7 +1948,7 @@ int32_t ExynosDisplayDrmInterface::clearDisplay(bool needModeClear)
     }
 
     /* Disable ModeSet */
-    if (needModeClear) {
+    if (needModeClear && !isAsyncOff) {
         if ((ret = clearDisplayMode(drmReq)) < 0) {
             HWC_LOGE(mExynosDisplay, "%s: Failed to apply display mode", __func__);
             return ret;
@@ -1958,6 +1960,23 @@ int32_t ExynosDisplayDrmInterface::clearDisplay(bool needModeClear)
         HWC_LOGE(mExynosDisplay, "%s:: Failed to commit pset ret=%d in clearDisplay()\n",
                 __func__, ret);
         return ret;
+    }
+
+    /* During async off we're clearing planes within a single refresh cycle
+     * and then offloading display off asynchronously.
+     */
+    if (isAsyncOff) {
+        if ((ret = clearDisplayMode(drmReq)) < 0) {
+            HWC_LOGE(mExynosDisplay, "%s: Failed to apply display mode", __func__);
+            return ret;
+        }
+
+        ret = drmReq.commit(DRM_MODE_ATOMIC_ALLOW_MODESET | DRM_MODE_ATOMIC_NONBLOCK, true);
+        if (ret) {
+            HWC_LOGE(mExynosDisplay, "%s:: Failed to commit pset ret=%d in clearDisplay()\n",
+                     __func__, ret);
+            return ret;
+        }
     }
 
     if (needModeClear) mActiveModeState.forceModeSet();

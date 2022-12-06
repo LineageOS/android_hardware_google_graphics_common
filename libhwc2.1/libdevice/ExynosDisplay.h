@@ -146,11 +146,16 @@ enum class hwc_request_state_t {
     SET_CONFIG_STATE_REQUESTED,
 };
 
-enum class DispIdleTimerRequester : uint32_t {
-    SF = 0,
-    PIXEL_DISP,
+enum class VrrThrottleRequester : uint32_t {
+    PIXEL_DISP = 0,
     TEST,
     LHBM,
+    MAX,
+};
+
+enum class DispIdleTimerRequester : uint32_t {
+    SF = 0,
+    VRR_THROTTLE,
     MAX,
 };
 
@@ -393,7 +398,7 @@ class ExynosDisplay {
 
         /** State variables */
         bool mPlugState;
-        hwc2_power_mode_t mPowerModeState;
+        std::optional<hwc2_power_mode_t> mPowerModeState;
         hwc2_vsync_t mVsyncState;
         bool mHasSingleBuffer;
         bool mPauseDisplay = false;
@@ -1181,12 +1186,14 @@ class ExynosDisplay {
             return PanelGammaSource::GAMMA_DEFAULT;
         }
         virtual void initLbe(){};
+        virtual bool isLbeSupported() { return false; }
         virtual void setLbeState(LbeState __unused state) {}
         virtual void setLbeAmbientLight(int __unused value) {}
         virtual LbeState getLbeState() { return LbeState::OFF; }
 
         int32_t checkPowerHalExtHintSupport(const std::string& mode);
 
+        virtual bool isLhbmSupported() { return false; }
         virtual int32_t setLhbmState(bool __unused enabled) { return NO_ERROR; }
         virtual bool getLhbmState() { return false; };
         virtual void setEarlyWakeupDisplay() {}
@@ -1233,7 +1240,7 @@ class ExynosDisplay {
 
         virtual int setMinIdleRefreshRate(const int __unused fps) { return NO_ERROR; }
         virtual int setRefreshRateThrottleNanos(const int64_t __unused delayNanos,
-                                                const DispIdleTimerRequester __unused requester) {
+                                                const VrrThrottleRequester __unused requester) {
             return NO_ERROR;
         }
 
@@ -1278,7 +1285,7 @@ class ExynosDisplay {
         /* Display hint to notify power hal */
         class PowerHalHintWorker : public Worker {
         public:
-            PowerHalHintWorker();
+            PowerHalHintWorker(uint32_t displayId);
             virtual ~PowerHalHintWorker();
             int Init();
 
@@ -1350,6 +1357,9 @@ class ExynosDisplay {
 
             // whether idle hint is supported
             bool mIdleHintIsSupported;
+
+            std::string mIdleHintStr;
+            std::string mRefreshRateHintPrefixStr;
 
             hwc2_power_mode_t mPowerModeState;
             uint32_t mVsyncPeriod;
@@ -1433,6 +1443,9 @@ class ExynosDisplay {
         static const constexpr nsecs_t SIGNAL_TIME_PENDING = INT64_MAX;
         static const constexpr nsecs_t SIGNAL_TIME_INVALID = -1;
         std::unordered_map<uint32_t, RollingAverage<kAveragesBufferSize>> mRollingAverages;
+        // mPowerHalHint should be declared only after mDisplayId and mIndex have been declared
+        // since the result of getDisplayId(mDisplayId, mIndex) is needed as the parameter of
+        // PowerHalHintWorker's constructor
         PowerHalHintWorker mPowerHalHint;
 
         std::optional<nsecs_t> mValidateStartTime;

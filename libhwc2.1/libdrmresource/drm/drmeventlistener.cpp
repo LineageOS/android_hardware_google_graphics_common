@@ -236,7 +236,8 @@ void DrmEventListener::DRMEventHandler() {
             case EXYNOS_DRM_HISTOGRAM_EVENT:
                 if (histogram_handler_) {
                     histo = (struct exynos_drm_histogram_event *)e;
-                    histogram_handler_->handleHistogramEvent((void *)&(histo->bins));
+                    histogram_handler_->handleHistogramEvent(histo->crtc_id,
+                                                             (void *)&(histo->bins));
                 }
                 break;
             case DRM_EVENT_FLIP_COMPLETE:

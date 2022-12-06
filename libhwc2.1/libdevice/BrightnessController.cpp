@@ -38,6 +38,7 @@ BrightnessController::BrightnessController(int32_t panelIndex, std::function<voi
         mHdrLayerState(HdrLayerState::kHdrNone),
         mUpdateDcLhbm(updateDcLhbm) {
     initBrightnessSysfs();
+    initCabcSysfs();
 }
 
 BrightnessController::~BrightnessController() {
@@ -62,10 +63,14 @@ int BrightnessController::initDrm(const DrmDevice& drmDevice,
 }
 
 void BrightnessController::initDimmingUsage() {
-    mBrightnessDimmingUsage = static_cast<BrightnessDimmingUsage>(
-            property_get_int32("vendor.display.brightness.dimming.usage", 0));
-    mHbmDimmingTimeUs =
-            property_get_int32("vendor.display.brightness.dimming.hbm_time", kHbmDimmingTimeUs);
+    String8 propName;
+    propName.appendFormat(kDimmingUsagePropName, mPanelIndex);
+
+    mBrightnessDimmingUsage = static_cast<BrightnessDimmingUsage>(property_get_int32(propName, 0));
+
+    propName.clear();
+    propName.appendFormat(kDimmingHbmTimePropName, mPanelIndex);
+    mHbmDimmingTimeUs = property_get_int32(propName, kHbmDimmingTimeUs);
 
     if (mBrightnessDimmingUsage == BrightnessDimmingUsage::NORMAL) {
         mDimming.store(true);
@@ -98,6 +103,17 @@ void BrightnessController::initBrightnessSysfs() {
 
     ifsMaxBrightness >> mMaxBrightness;
     ifsMaxBrightness.close();
+}
+
+void BrightnessController::initCabcSysfs() {
+    String8 nodeName;
+    nodeName.appendFormat(kLocalCabcModeFileNode, mPanelIndex);
+    mCabcModeOfs.open(nodeName.string(), std::ofstream::out);
+    if (mCabcModeOfs.fail()) {
+        ALOGW("%s %s fail to open", __func__, nodeName.string());
+        mCabcModeOfs.close();
+        return;
+    }
 }
 
 void BrightnessController::initBrightnessTable(const DrmDevice& drmDevice,
@@ -348,10 +364,7 @@ void BrightnessController::onClearDisplay() {
     mBrightnessFloatReq.reset(-1);
     mInstantHbmReq.reset(false);
 
-    mBrightnessLevel.store(0);
-    if (mBrightnessLevel.is_dirty()) {
-        applyBrightnessViaSysfs(mBrightnessLevel.get());
-    }
+    mBrightnessLevel.reset(0);
     mDisplayWhitePointNits = 0;
     mPrevDisplayWhitePointNits = 0;
     mGhbm.reset(HbmMode::OFF);
@@ -363,6 +376,9 @@ void BrightnessController::onClearDisplay() {
     mLhbm.reset(false);
 
     mLhbmBrightnessAdj = false;
+
+    std::lock_guard<std::recursive_mutex> lock1(mCabcModeMutex);
+    mCabcMode.reset(false);
 }
 
 int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
@@ -710,6 +726,27 @@ int BrightnessController::checkSysfsStatus(const char* file, const std::string& 
     return ret == NO_ERROR;
 }
 
+void BrightnessController::setOutdoorVisibility(LbeState state) {
+    std::lock_guard<std::recursive_mutex> lock(mCabcModeMutex);
+    mOutdoorVisibility = (state != LbeState::OFF);
+}
+
+int BrightnessController::updateCabcMode() {
+    if (mCabcModeOfs.fail()) return HWC2_ERROR_UNSUPPORTED;
+
+    std::lock_guard<std::recursive_mutex> lock(mCabcModeMutex);
+    bool mode = (!(isHdrLayerOn() || mOutdoorVisibility));
+    mCabcMode.store(mode);
+
+    if (mCabcMode.is_dirty()) {
+        applyCabcModeViaSysfs(mode);
+        ALOGD("%s, isHdrLayerOn: %d, mOutdoorVisibility: %d.", __func__, isHdrLayerOn(),
+              mOutdoorVisibility);
+        mCabcMode.clear_dirty();
+    }
+    return NO_ERROR;
+}
+
 int BrightnessController::applyBrightnessViaSysfs(uint32_t level) {
     if (mBrightnessOfs.is_open()) {
         ATRACE_NAME("write_bl_sysfs");
@@ -734,6 +771,22 @@ int BrightnessController::applyBrightnessViaSysfs(uint32_t level) {
     }
 
     return HWC2_ERROR_UNSUPPORTED;
+}
+
+int BrightnessController::applyCabcModeViaSysfs(uint8_t mode) {
+    if (!mCabcModeOfs.is_open()) return HWC2_ERROR_UNSUPPORTED;
+
+    ATRACE_NAME("write_cabc_mode_sysfs");
+    mCabcModeOfs.seekp(std::ios_base::beg);
+    mCabcModeOfs << std::to_string(mode);
+    mCabcModeOfs.flush();
+    if (mCabcModeOfs.fail()) {
+        ALOGE("%s fail to write CabcMode %d", __func__, mode);
+        mCabcModeOfs.clear();
+        return HWC2_ERROR_NO_RESOURCES;
+    }
+    ALOGI("%s Cabc_Mode=%d", __func__, mode);
+    return NO_ERROR;
 }
 
 // brightness is normalized to current display brightness
@@ -777,7 +830,7 @@ void BrightnessController::dump(String8& result) {
                         "brightness %f, instant hbm %d\n",
                         mEnhanceHbmReq.get(), mLhbmReq.get(), mBrightnessFloatReq.get(),
                         mInstantHbmReq.get());
-    result.appendFormat("\tstates: brighntess level %d, ghbm %d, dimming %d, lhbm %d\n",
+    result.appendFormat("\tstates: brighntess level %d, ghbm %d, dimming %d, lhbm %d",
                         mBrightnessLevel.get(), mGhbm.get(), mDimming.get(), mLhbm.get());
     result.appendFormat("\thdr layer state %d, unchecked lhbm request %d(%d), "
                         "unchecked ghbm request %d(%d)\n",
@@ -788,5 +841,8 @@ void BrightnessController::dump(String8& result) {
                         mHbmDimming, mHbmDimmingTimeUs);
     result.appendFormat("\twhite point nits current %f, previous %f\n", mDisplayWhitePointNits,
                         mPrevDisplayWhitePointNits);
+    result.appendFormat("\tcabc supported %d, cabcMode %d\n", mCabcModeOfs.is_open(),
+                        mCabcMode.get());
+
     result.appendFormat("\n");
 }

@@ -41,7 +41,7 @@ public:
     DrmHistogramEventHandler() {}
     virtual ~DrmHistogramEventHandler() {}
 
-    virtual void handleHistogramEvent(void *) = 0;
+    virtual void handleHistogramEvent(uint32_t crtc_id, void *) = 0;
 };
 
 class DrmTUIEventHandler {

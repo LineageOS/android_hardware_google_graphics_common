@@ -30,8 +30,9 @@ uint32_t histogram::HistogramMediator::getFrameCount() {
 }
 
 bool histogram::HistogramMediator::isDisplayPowerOff() {
-    if ((mDisplay->mPowerModeState == HWC2_POWER_MODE_OFF) ||
-        (mDisplay->mPowerModeState == HWC2_POWER_MODE_DOZE)) {
+    if (!mDisplay->mPowerModeState.has_value() ||
+        ((mDisplay->mPowerModeState.value() == HWC2_POWER_MODE_OFF) ||
+         (mDisplay->mPowerModeState.value() == HWC2_POWER_MODE_DOZE))) {
         return true;
     }
     return false;

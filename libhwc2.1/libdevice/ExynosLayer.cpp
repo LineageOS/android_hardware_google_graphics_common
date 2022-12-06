@@ -529,6 +529,11 @@ int32_t ExynosLayer::setLayerDataspace(int32_t /*android_dataspace_t*/ dataspace
 
     if (currentDataSpace != mDataSpace) {
         setGeometryChanged(GEOMETRY_LAYER_DATASPACE_CHANGED);
+        // invalidate metadata if dataspace is changed. need metadata update
+        // to be after dataspace update.
+        if (mMetaParcel != nullptr) {
+            mMetaParcel->eType = VIDEO_INFO_TYPE_INVALID;
+        }
     }
     mDataSpace = currentDataSpace;
 
