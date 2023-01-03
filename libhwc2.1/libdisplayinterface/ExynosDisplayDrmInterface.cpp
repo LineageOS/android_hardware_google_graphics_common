@@ -1094,7 +1094,11 @@ int32_t ExynosDisplayDrmInterface::setActiveConfigWithConstraints(
             (mActiveModeState.blob_id != 0) && mActiveModeState.isFullModeSwitch(*mode);
 
     if (!test) {
-        mDesiredModeState.setMode(*mode, modeBlob, drmReq);
+        if (modeBlob) { /* only replace desired mode if it has changed */
+            mDesiredModeState.setMode(*mode, modeBlob, drmReq);
+        } else {
+            ALOGD("%s:: same desired mode %d", __func__, config);
+        }
     } else {
         if (!isResSwitch) {
             ret = setDisplayMode(drmReq, modeBlob ? modeBlob : mDesiredModeState.blob_id);
