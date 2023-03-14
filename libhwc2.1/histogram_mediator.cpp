@@ -19,8 +19,9 @@ histogram::HistogramMediator::HistogramMediator(ExynosDisplay *display) {
     mDisplay = display;
     ExynosDisplayDrmInterface *moduleDisplayInterface =
             static_cast<ExynosDisplayDrmInterface *>(display->mDisplayInterface.get());
+    mIDLHistogram = std::make_shared<HistogramReceiver>();
 
-    moduleDisplayInterface->registerHistogramInfo(static_cast<IDLHistogram *>(&mIDLHistogram));
+    moduleDisplayInterface->registerHistogramInfo(mIDLHistogram);
     moduleDisplayInterface->getPanelResolution();
 }
 uint32_t histogram::HistogramMediator::getFrameCount() {
@@ -60,8 +61,8 @@ histogram::HistogramErrorCode histogram::HistogramMediator::requestHist() {
         return histogram::HistogramErrorCode::ENABLE_HIST_ERROR;
     }
     {
-        std::unique_lock<std::mutex> lk(mIDLHistogram.mDataCollectingMutex);
-        mIDLHistogram.mHistReq_pending = true;
+        std::unique_lock<std::mutex> lk(mIDLHistogram->mDataCollectingMutex);
+        mIDLHistogram->mHistReq_pending = true;
     }
     return histogram::HistogramErrorCode::NONE;
 }
@@ -94,25 +95,25 @@ int histogram::HistogramMediator::calculateThreshold(const RoiRect &roi) {
 histogram::HistogramErrorCode histogram::HistogramMediator::setRoiWeightThreshold(
         const RoiRect roi, const Weight weight, const HistogramPos pos) {
     int threshold = calculateThreshold(roi);
-    mIDLHistogram.setHistogramROI((uint16_t)roi.left, (uint16_t)roi.top,
-                                  (uint16_t)(roi.right - roi.left),
-                                  (uint16_t)(roi.bottom - roi.top));
-    mIDLHistogram.setHistogramWeights(weight.weightR, weight.weightG, weight.weightB);
-    mIDLHistogram.setHistogramThreshold(threshold);
-    mIDLHistogram.setHistogramPos(pos);
+    mIDLHistogram->setHistogramROI((uint16_t)roi.left, (uint16_t)roi.top,
+                                   (uint16_t)(roi.right - roi.left),
+                                   (uint16_t)(roi.bottom - roi.top));
+    mIDLHistogram->setHistogramWeights(weight.weightR, weight.weightG, weight.weightB);
+    mIDLHistogram->setHistogramThreshold(threshold);
+    mIDLHistogram->setHistogramPos(pos);
 
     return histogram::HistogramErrorCode::NONE;
 }
 
 histogram::HistogramErrorCode histogram::HistogramMediator::collectRoiLuma(
         std::vector<char16_t> *buf) {
-    std::unique_lock<std::mutex> lk(mIDLHistogram.mDataCollectingMutex);
+    std::unique_lock<std::mutex> lk(mIDLHistogram->mDataCollectingMutex);
 
-    mIDLHistogram.mHistData_cv.wait_for(lk, std::chrono::milliseconds(50), [this]() {
-        return (!isDisplayPowerOff() && !mIDLHistogram.mHistReq_pending);
+    mIDLHistogram->mHistData_cv.wait_for(lk, std::chrono::milliseconds(50), [this]() {
+        return (!isDisplayPowerOff() && !mIDLHistogram->mHistReq_pending);
     });
-    if (mIDLHistogram.mHistReq_pending == false) setSampleFrameCounter(getFrameCount());
-    buf->assign(mIDLHistogram.mHistData, mIDLHistogram.mHistData + HISTOGRAM_BINS_SIZE);
+    if (mIDLHistogram->mHistReq_pending == false) setSampleFrameCounter(getFrameCount());
+    buf->assign(mIDLHistogram->mHistData, mIDLHistogram->mHistData + HISTOGRAM_BINS_SIZE);
 
     return histogram::HistogramErrorCode::NONE;
 }

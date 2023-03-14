@@ -832,23 +832,41 @@ int32_t ExynosDisplayDrmInterface::chosePreferredConfig()
     if (err != HWC2_ERROR_NONE || !num_configs)
         return err;
 
-    hwc2_config_t config;
-    int32_t bootConfig;
-    err = mExynosDisplay->getPreferredDisplayConfigInternal(&bootConfig);
-    if (err == HWC2_ERROR_NONE && property_get_bool("sys.boot_completed", false) == true) {
-        config = static_cast<hwc2_config_t>(bootConfig);
+    int32_t config = -1;
+    char modeStr[PROPERTY_VALUE_MAX] = "\0";
+    int32_t width = 0, height = 0, fps = 0;
+    if (property_get("vendor.display.preferred_mode", modeStr, "") > 0 &&
+        sscanf(modeStr, "%dx%d@%d", &width, &height, &fps) == 3) {
+        err = mExynosDisplay->lookupDisplayConfigs(width, height, fps, &config);
     } else {
-        config = mDrmConnector->get_preferred_mode_id();
-    }
-    ALOGI("Preferred mode id: %d, state: %d", config, mDrmConnector->state());
-
-    if ((err = setActiveConfig(config)) < 0) {
-        ALOGE("failed to set default config, err %d", err);
-        return err;
+        err = HWC2_ERROR_BAD_CONFIG;
     }
 
-    mExynosDisplay->updateInternalDisplayConfigVariables(config);
-    return err;
+    const int32_t drmPreferredConfig = mDrmConnector->get_preferred_mode_id();
+    if (err != HWC2_ERROR_NONE) {
+        config = drmPreferredConfig;
+    }
+    ALOGI("Preferred mode id: %d(%s), state: %d", config, modeStr, mDrmConnector->state());
+
+    auto &configs = mExynosDisplay->mDisplayConfigs;
+    if (config != drmPreferredConfig &&
+        (configs[config].width != configs[drmPreferredConfig].width ||
+         configs[config].height != configs[drmPreferredConfig].height)) {
+        // HWC cannot send a resolution change commit here until 1st frame update because of
+        // some panels requirement. Therefore, it calls setActiveConfigWithConstraints() help
+        // set mDesiredModeState correctly, and then trigger modeset in the 1s frame update.
+        if ((err = setActiveConfigWithConstraints(config)) < 0) {
+            ALOGE("failed to setActiveConfigWithConstraints(), err %d", err);
+            return err;
+        }
+    } else {
+        if ((err = setActiveConfig(config)) < 0) {
+            ALOGE("failed to set default config, err %d", err);
+            return err;
+        }
+    }
+
+    return mExynosDisplay->updateInternalDisplayConfigVariables(config);
 }
 
 int32_t ExynosDisplayDrmInterface::getDisplayConfigs(

@@ -66,7 +66,7 @@ public:
                                              const HistogramPos pos);
     RoiRect calRoi(RoiRect roi);
     struct HistogramReceiver : public IDLHistogram {
-        HistogramReceiver() : mHistData() {}
+        HistogramReceiver() : mHistData(){};
         void callbackHistogram(char16_t *bin) override;
         uint16_t mHistData[HISTOGRAM_BINS_SIZE]; // luma buffer
         std::condition_variable mHistData_cv;    // for pullback data sync ctrl
@@ -76,11 +76,11 @@ public:
     uint32_t getFrameCount();
     void setSampleFrameCounter(int32_t id) { mSampledFrameCounter = id; }
     uint32_t getSampleFrameCounter() { return mSampledFrameCounter; }
-    bool histRequested() { return mIDLHistogram.mHistReq_pending; }
+    bool histRequested() { return mIDLHistogram->mHistReq_pending; }
 
 private:
     int calculateThreshold(const RoiRect &roi);
-    HistogramReceiver mIDLHistogram;
+    std::shared_ptr<HistogramReceiver> mIDLHistogram;
     ExynosDisplay *mDisplay = nullptr;
     uint32_t mSampledFrameCounter = 0;
 };

@@ -260,6 +260,23 @@ ndk::ScopedAStatus Display::getPanelCalibrationStatus(PanelCalibrationStatus *_a
     }
     return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
 }
+
+ndk::ScopedAStatus Display::isDbmSupported(bool *_aidl_return) {
+    if (!mDisplay) {
+        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+    }
+    *_aidl_return = mDisplay->isDbmSupported();
+    return ndk::ScopedAStatus::ok();
+}
+
+ndk::ScopedAStatus Display::setDbmState(bool enabled) {
+    if (!mDisplay) {
+        return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
+    }
+    mDisplay->setDbmState(enabled);
+    return ndk::ScopedAStatus::ok();
+}
+
 } // namespace display
 } // namespace pixel
 } // namespace hardware

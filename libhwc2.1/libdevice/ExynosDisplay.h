@@ -1209,6 +1209,8 @@ class ExynosDisplay {
         virtual PanelCalibrationStatus getPanelCalibrationStatus() {
             return PanelCalibrationStatus::UNCALIBRATED;
         }
+        virtual bool isDbmSupported() { return false; }
+        virtual int32_t setDbmState(bool __unused enabled) { return NO_ERROR; }
 
         /* getDisplayPreAssignBit support mIndex up to 1.
            It supports only dual LCD and 2 external displays */
@@ -1260,6 +1262,10 @@ class ExynosDisplay {
         // check if there are any dimmed layers
         bool isMixedComposition();
         bool isPriorFrameMixedCompostion() { return mPriorFrameMixedComposition; }
+        int lookupDisplayConfigs(const int32_t& width,
+                                 const int32_t& height,
+                                 const int32_t& fps,
+                                 int32_t* outConfig);
 
     private:
         bool skipStaticLayerChanged(ExynosCompositionInfo& compositionInfo);

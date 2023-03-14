@@ -471,6 +471,18 @@ class ExynosLayer : public ExynosMPPSource {
             return ((mLayerBuffer != NULL) &&
                     isFormatYUV(VendorGraphicBufferMeta::get_internal_format(mLayerBuffer)));
         }
+        bool isLayerHasAlphaChannel() {
+            return ((mLayerBuffer != NULL) &&
+                    formatHasAlphaChannel(
+                            VendorGraphicBufferMeta::get_internal_format(mLayerBuffer)));
+        }
+        bool isLayerOpaque() {
+            return (!isLayerHasAlphaChannel() &&
+                    std::fabs(mPlaneAlpha - 1.0f) <= std::numeric_limits<float>::epsilon());
+        }
+        bool needClearClientTarget() {
+            return (mOverlayPriority >= ePriorityHigh && isLayerOpaque());
+        }
         size_t getDisplayFrameArea() { return HEIGHT(mDisplayFrame) * WIDTH(mDisplayFrame); }
         void setGeometryChanged(uint64_t changedBit);
         void clearGeometryChanged() {mGeometryChanged = 0;};

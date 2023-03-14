@@ -3214,7 +3214,7 @@ int32_t ExynosDisplay::getDisplayRequests(
 
         for (int32_t i = mClientCompositionInfo.mFirstIndex; i < mClientCompositionInfo.mLastIndex; i++) {
             ExynosLayer *layer = mLayers[i];
-            if (layer->mOverlayPriority >= ePriorityHigh) {
+            if (layer->needClearClientTarget()) {
                 if ((outLayers != NULL) && (outLayerRequests != NULL)) {
                     if (requestNum >= *outNumElements)
                         return -1;
@@ -4902,8 +4902,10 @@ int32_t ExynosDisplay::addClientCompositionLayer(uint32_t layerIndex)
     /* handle sandwiched layers */
     for (uint32_t i = (uint32_t)mClientCompositionInfo.mFirstIndex + 1; i < (uint32_t)mClientCompositionInfo.mLastIndex; i++) {
         ExynosLayer *layer = mLayers[i];
-        if (layer->mOverlayPriority >= ePriorityHigh) {
-            DISPLAY_LOGD(eDebugResourceManager, "\t[%d] layer has high or max priority (%d)", i, layer->mOverlayPriority);
+        if (layer->needClearClientTarget()) {
+            DISPLAY_LOGD(eDebugResourceManager,
+                         "\t[%d] layer is opaque and has high or max priority (%d)", i,
+                         layer->mOverlayPriority);
             continue;
         }
         if (layer->mValidateCompositionType != HWC2_COMPOSITION_CLIENT)
@@ -6040,4 +6042,28 @@ bool ExynosDisplay::isMixedComposition() {
         }
     }
     return false;
+}
+
+int ExynosDisplay::lookupDisplayConfigs(const int32_t &width,
+                                        const int32_t &height,
+                                        const int32_t &fps,
+                                        int32_t *outConfig) {
+    if (!fps)
+        return HWC2_ERROR_BAD_CONFIG;
+
+    constexpr auto nsecsPerSec = std::chrono::nanoseconds(1s).count();
+    constexpr auto nsecsPerMs = std::chrono::nanoseconds(1ms).count();
+
+    const auto vsyncPeriod = nsecsPerSec / fps;
+
+    for (auto const& [config, mode] : mDisplayConfigs) {
+        long delta = abs(vsyncPeriod - mode.vsyncPeriod);
+        if ((width == mode.width) && (height == mode.height) && (delta < nsecsPerMs)) {
+            ALOGD("%s: found display config for mode: %dx%d@%d=%d",
+                 __func__, width, height, fps, config);
+            *outConfig = config;
+            return HWC2_ERROR_NONE;
+        }
+    }
+    return HWC2_ERROR_BAD_CONFIG;
 }

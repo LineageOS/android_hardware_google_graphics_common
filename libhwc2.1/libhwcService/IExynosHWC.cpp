@@ -66,6 +66,7 @@ enum {
     SET_REFRESH_RATE_THROTTLE = 1006,
     SET_DISPLAY_RCDLAYER_ENABLED = 1007,
     TRIGGER_DISPLAY_IDLE_ENTER = 1008,
+    SET_DISPLAY_DBM = 1009,
 };
 
 class BpExynosHWCService : public BpInterface<IExynosHWCService> {
@@ -459,6 +460,16 @@ public:
         ALOGE_IF(result != NO_ERROR, "TRIGGER_DISPLAY_IDLE_ENTER transact error(%d)", result);
         return result;
     }
+
+    virtual int32_t setDisplayDbm(int32_t display_id, uint32_t on) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IExynosHWCService::getInterfaceDescriptor());
+        data.writeInt32(display_id);
+        data.writeInt32(on);
+        int result = remote()->transact(SET_DISPLAY_DBM, data, &reply);
+        if (result) ALOGE("SET_DISPLAY_DBM transact error(%d)", result);
+        return result;
+    }
 };
 
 IMPLEMENT_META_INTERFACE(ExynosHWCService, "android.hal.ExynosHWCService");
@@ -739,6 +750,15 @@ status_t BnExynosHWCService::onTransact(
             uint32_t displayIndex = data.readUint32();
             uint32_t idleTeRefreshRate = data.readUint32();
             return triggerDisplayIdleEnter(displayIndex, idleTeRefreshRate);
+        } break;
+
+        case SET_DISPLAY_DBM: {
+            CHECK_INTERFACE(IExynosHWCService, data, reply);
+            int32_t display_id = data.readInt32();
+            uint32_t on = data.readInt32();
+            int32_t error = setDisplayDbm(display_id, on);
+            reply->writeInt32(error);
+            return NO_ERROR;
         } break;
 
         default:

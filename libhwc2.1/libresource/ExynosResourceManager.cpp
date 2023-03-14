@@ -2314,7 +2314,7 @@ void ExynosResourceManager::setScaleDownRatio(uint32_t physicalType,
     }
 }
 
-int32_t  ExynosResourceManager::prepareResources()
+int32_t ExynosResourceManager::prepareResources()
 {
     int ret = NO_ERROR;
     HDEBUGLOGD(eDebugResourceManager, "This is first validate");

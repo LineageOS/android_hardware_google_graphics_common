@@ -1157,8 +1157,9 @@ int32_t load_png_image(const char* filepath, buffer_handle_t buffer) {
         return -EINVAL;
     }
 
-    uint32_t bufferHandleSize = gmeta.stride * gmeta.vstride * formatToBpp(gmeta.format) / 8;
-    if (bufferHandleSize > gmeta.size) {
+    size_t bufferHandleSize = gmeta.stride * gmeta.vstride * formatToBpp(gmeta.format) / 8;
+    size_t png_size = png_get_rowbytes(png_ptr, info_ptr) * height;
+    if (bufferHandleSize > gmeta.size || (bufferHandleSize < png_size)) {
         fclose(fp);
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         return -EINVAL;
