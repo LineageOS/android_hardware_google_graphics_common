@@ -164,7 +164,7 @@ int ExynosPrimaryDisplay::getDDIScalerMode(int width, int height) {
 int32_t ExynosPrimaryDisplay::doDisplayConfigInternal(hwc2_config_t config) {
     if (!mPowerModeState.has_value() || (*mPowerModeState != HWC2_POWER_MODE_ON)) {
         mPendActiveConfig = config;
-        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_NONE;
+        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_DONE;
         DISPLAY_LOGI("%s:: Pending desired Config: %d", __func__, config);
         return NO_ERROR;
     }
@@ -536,22 +536,14 @@ int32_t ExynosPrimaryDisplay::setLhbmState(bool enabled) {
 
     if (enabled) {
         ATRACE_NAME("wait for peak refresh rate");
-        for (int32_t i = 0; i <= kLhbmWaitForPeakRefreshRate; i++) {
-            if (!isCurrentPeakRefreshRate()) {
-                if (i == kLhbmWaitForPeakRefreshRate) {
-                    ALOGW("setLhbmState(on) wait for peak refresh rate timeout !");
-                    return TIMED_OUT;
-                }
-
-                ATRACE_NAME("wait for one vblank");
-                if (mDisplayInterface->waitVBlank()) {
-                    ALOGE("%s failed to wait vblank for peak refresh rate, %d", __func__, i);
-                    return -ENODEV;
-                }
-            } else {
-                ALOGI_IF(i, "waited %d vblank to reach peak refresh rate", i);
-                break;
-            }
+        std::unique_lock<std::mutex> lock(mPeakRefreshRateMutex);
+        mNotifyPeakRefreshRate = true;
+        if (!mPeakRefreshRateCondition.wait_for(lock,
+                                                std::chrono::milliseconds(
+                                                        kLhbmWaitForPeakRefreshRateMs),
+                                                [this]() { return isCurrentPeakRefreshRate(); })) {
+            ALOGW("setLhbmState(on) wait for peak refresh rate timeout !");
+            return TIMED_OUT;
         }
     }
 

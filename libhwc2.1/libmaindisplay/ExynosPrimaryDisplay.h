@@ -118,8 +118,8 @@ class ExynosPrimaryDisplay : public ExynosDisplay {
         FILE* mLhbmFd;
         std::atomic<bool> mLhbmOn;
         int32_t mFramesToReachLhbmPeakBrightness;
-        // wait num of vsync periods for peak refresh rate
-        static constexpr uint32_t kLhbmWaitForPeakRefreshRate = 10;
+        // timeout value of waiting for peak refresh rate
+        static constexpr uint32_t kLhbmWaitForPeakRefreshRateMs = 200;
         static constexpr uint32_t kLhbmRefreshRateThrottleMs = 1000;
 
         FILE* mEarlyWakeupDispFd;
