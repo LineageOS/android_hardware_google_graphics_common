@@ -50,9 +50,6 @@ enum {
     SET_DDISCALER,
     GET_EXTERNAL_HDR_CAPA,
     SET_SCALE_DOWN_RATIO,
-#if 0
-    NOTIFY_PSR_EXIT,
-#endif
     SET_HWC_DEBUG = 105,
     GET_HWC_DEBUG = 106,
     SET_HWC_FENCE_DEBUG = 107,
@@ -365,11 +362,12 @@ public:
         return result;
     };
 
-    virtual int setDDIScaler(uint32_t width, uint32_t height) {
+    virtual int setDDIScaler(uint32_t displayId, uint32_t width, uint32_t height) {
         Parcel data, reply;
         data.writeInterfaceToken(IExynosHWCService::getInterfaceDescriptor());
-        data.writeInt32(width);
-        data.writeInt32(height);
+        data.writeUint32(displayId);
+        data.writeUint32(width);
+        data.writeUint32(height);
         int result = remote()->transact(SET_DDISCALER, data, &reply);
         if (result == NO_ERROR)
             result = reply.readInt32();
@@ -377,15 +375,6 @@ public:
             ALOGE("SET_DDISCALER transact error(%d)", result);
         return result;
     }
-
-    /*
-    virtual void notifyPSRExit()
-    {
-        Parcel data, reply;
-        data.writeInterfaceToken(IExynosHWCService::getInterfaceDescriptor());
-        remote()->transact(NOTIFY_PSR_EXIT, data, &reply);
-    }
-    */
 
     int32_t setDisplayDeviceMode(int32_t display_id, int32_t mode)
     {
@@ -635,50 +624,13 @@ status_t BnExynosHWCService::onTransact(
         } break;
         case SET_DDISCALER: {
             CHECK_INTERFACE(IExynosHWCService, data, reply);
-            uint32_t width = data.readInt32();
-            uint32_t height = data.readInt32();
-            int error = setDDIScaler(width, height);
+            uint32_t display_id = data.readUint32();
+            uint32_t width = data.readUint32();
+            uint32_t height = data.readUint32();
+            int error = setDDIScaler(display_id, width, height);
             reply->writeInt32(error);
             return NO_ERROR;
         } break;
-
-#if 0
-        case SET_HWC_CTL_MAX_OVLY_CNT: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            int val = data.readInt32();
-            setHWCCtl(SET_HWC_CTL_MAX_OVLY_CNT, val);
-            return NO_ERROR;
-        } break;
-        case SET_HWC_CTL_VIDEO_OVLY_CNT: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            int val = data.readInt32();
-            setHWCCtl(SET_HWC_CTL_VIDEO_OVLY_CNT, val);
-            return NO_ERROR;
-        } break;
-         case SET_HWC_CTL_DYNAMIC_RECOMP: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            int val = data.readInt32();
-            setHWCCtl(SET_HWC_CTL_DYNAMIC_RECOMP, val);
-            return NO_ERROR;
-        } break;
-        case SET_HWC_CTL_SKIP_STATIC: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            int val = data.readInt32();
-            setHWCCtl(SET_HWC_CTL_SKIP_STATIC, val);
-            return NO_ERROR;
-        } break;
-        case SET_HWC_CTL_SECURE_DMA: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            int val = data.readInt32();
-            setHWCCtl(SET_HWC_CTL_SECURE_DMA, val);
-            return NO_ERROR;
-        } break;
-        case NOTIFY_PSR_EXIT: {
-            CHECK_INTERFACE(IExynosHWCService, data, reply);
-            notifyPSRExit();
-            return NO_ERROR;
-        }
-#endif
         case SET_DISPLAY_DEVICE_MODE: {
             CHECK_INTERFACE(IExynosHWCService, data, reply);
             int32_t display_id = data.readInt32();

@@ -133,7 +133,7 @@ class ExynosResourceManager {
         int32_t updateSupportedMPPFlag(ExynosDisplay * display);
         int32_t resetResources();
         int32_t preAssignResources();
-        void preAssignWindows();
+        void preAssignWindows(ExynosDisplay *display);
         int32_t preProcessLayer(ExynosDisplay *display);
         int32_t resetAssignedResources(ExynosDisplay *display, bool forceReset = false);
         virtual int32_t assignCompositionTarget(ExynosDisplay *display, uint32_t targetType);

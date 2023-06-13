@@ -91,6 +91,14 @@ ExynosPrimaryDisplay::ExynosPrimaryDisplay(uint32_t index, ExynosDevice *device)
     mFramesToReachLhbmPeakBrightness =
             property_get_int32("vendor.primarydisplay.lhbm.frames_to_reach_peak_brightness", 3);
 
+    // Allow to enable dynamic recomposition after every power on
+    // since it will always be disabled for every power off
+    // TODO(b/268474771): to enable DR by default if video mode panel is detected
+    if (property_get_int32("vendor.display.dynamic_recomposition", 0) & (1 << index)) {
+        mDRDefault = true;
+        mDREnable = true;
+    }
+
     // Prepare multi resolution
     // Will be exynosHWCControl.multiResoultion
     mResolutionInfo.nNum = 1;
@@ -120,7 +128,7 @@ ExynosPrimaryDisplay::ExynosPrimaryDisplay(uint32_t index, ExynosDevice *device)
     if (mEarlyWakeupDispFd == nullptr)
         ALOGE("open %s failed! %s", earlyWakeupNodeBase, strerror(errno));
     mBrightnessController = std::make_unique<BrightnessController>(
-            mIndex, [this]() { mDevice->onRefresh(); },
+            mIndex, [this]() { mDevice->onRefresh(mDisplayId); },
             [this]() { updatePresentColorConversionInfo(); });
 }
 
@@ -164,7 +172,7 @@ int ExynosPrimaryDisplay::getDDIScalerMode(int width, int height) {
 int32_t ExynosPrimaryDisplay::doDisplayConfigInternal(hwc2_config_t config) {
     if (!mPowerModeState.has_value() || (*mPowerModeState != HWC2_POWER_MODE_ON)) {
         mPendActiveConfig = config;
-        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_NONE;
+        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_DONE;
         DISPLAY_LOGI("%s:: Pending desired Config: %d", __func__, config);
         return NO_ERROR;
     }
@@ -265,7 +273,7 @@ int32_t ExynosPrimaryDisplay::setPowerOn() {
     ATRACE_CALL();
     updateAppliedActiveConfig(0, 0);
     int ret = NO_ERROR;
-    if (!mFirstPowerOn) {
+    if (mDisplayId != 0 || !mFirstPowerOn) {
         ret = applyPendingConfig();
     }
 
@@ -536,22 +544,14 @@ int32_t ExynosPrimaryDisplay::setLhbmState(bool enabled) {
 
     if (enabled) {
         ATRACE_NAME("wait for peak refresh rate");
-        for (int32_t i = 0; i <= kLhbmWaitForPeakRefreshRate; i++) {
-            if (!isCurrentPeakRefreshRate()) {
-                if (i == kLhbmWaitForPeakRefreshRate) {
-                    ALOGW("setLhbmState(on) wait for peak refresh rate timeout !");
-                    return TIMED_OUT;
-                }
-
-                ATRACE_NAME("wait for one vblank");
-                if (mDisplayInterface->waitVBlank()) {
-                    ALOGE("%s failed to wait vblank for peak refresh rate, %d", __func__, i);
-                    return -ENODEV;
-                }
-            } else {
-                ALOGI_IF(i, "waited %d vblank to reach peak refresh rate", i);
-                break;
-            }
+        std::unique_lock<std::mutex> lock(mPeakRefreshRateMutex);
+        mNotifyPeakRefreshRate = true;
+        if (!mPeakRefreshRateCondition.wait_for(lock,
+                                                std::chrono::milliseconds(
+                                                        kLhbmWaitForPeakRefreshRateMs),
+                                                [this]() { return isCurrentPeakRefreshRate(); })) {
+            ALOGW("setLhbmState(on) wait for peak refresh rate timeout !");
+            return TIMED_OUT;
         }
     }
 
@@ -836,7 +836,7 @@ void ExynosPrimaryDisplay::handleDisplayIdleEnter(const uint32_t idleTeRefreshRa
     bool needed = false;
     for (size_t i = 0; i < mLayers.size(); i++) {
         if (mLayers[i]->mOtfMPP && mLayers[i]->mM2mMPP == nullptr &&
-            !mLayers[i]->checkDownscaleCap(idleTeRefreshRate)) {
+            !mLayers[i]->checkBtsCap(idleTeRefreshRate)) {
             needed = true;
             break;
         }
@@ -981,7 +981,7 @@ void ExynosPrimaryDisplay::checkBtsReassignResource(const uint32_t vsyncPeriod,
     if (vsyncPeriod < btsVsyncPeriod) {
         for (size_t i = 0; i < mLayers.size(); i++) {
             if (mLayers[i]->mOtfMPP && mLayers[i]->mM2mMPP == nullptr &&
-                !mLayers[i]->checkDownscaleCap(refreshRate)) {
+                !mLayers[i]->checkBtsCap(refreshRate)) {
                 mLayers[i]->setGeometryChanged(GEOMETRY_DEVICE_CONFIG_CHANGED);
                 break;
             }

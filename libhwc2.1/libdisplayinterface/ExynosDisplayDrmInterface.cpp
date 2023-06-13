@@ -30,6 +30,7 @@
 #include "BrightnessController.h"
 #include "ExynosHWCDebug.h"
 #include "ExynosHWCHelper.h"
+#include "ExynosLayer.h"
 
 using namespace std::chrono_literals;
 
@@ -289,10 +290,14 @@ int32_t FramebufferManager::getBuffer(const exynos_win_config_data &config, uint
     if (config.layer || config.buffer_id) {
         Mutex::Autolock lock(mMutex);
         auto &cachedBuffers = mCachedLayerBuffers[config.layer];
-        if (cachedBuffers.size() > MAX_CACHED_BUFFERS_PER_LAYER) {
-            ALOGW("FBManager: cached buffers size %zu exceeds limitation while adding fbId %d",
-                  cachedBuffers.size(), fbId);
-            printExynosLayer(config.layer);
+        auto maxCachedBufferSize = MAX_CACHED_BUFFERS_PER_LAYER;
+        if (config.protection && config.layer && config.layer->mM2mMPP) {
+            maxCachedBufferSize = MAX_CACHED_SECURE_BUFFERS_PER_G2D_LAYER;
+        }
+
+        if (cachedBuffers.size() > maxCachedBufferSize) {
+            ALOGW("FBManager: cached buffers size %zu exceeds limitation(%zu) while adding fbId %d",
+                  cachedBuffers.size(), maxCachedBufferSize, fbId);
             mCleanBuffers.splice(mCleanBuffers.end(), cachedBuffers);
         }
 

@@ -41,6 +41,8 @@ using namespace android;
 using namespace vendor::graphics;
 using ::aidl::android::hardware::graphics::composer3::Composition;
 
+constexpr nsecs_t kLayerFpsStableTimeNs = s2ns(5);
+
 class ExynosMPP;
 
 enum overlay_priority {
@@ -127,7 +129,7 @@ class ExynosLayer : public ExynosMPPSource {
         /**
          * Update rate for using client composition.
          */
-        uint32_t mFps;
+        float mFps;
 
         /**
          * Assign priority, when priority changing is needded by order infomation in mGeometryChanged
@@ -163,6 +165,8 @@ class ExynosLayer : public ExynosMPPSource {
         uint32_t mFrameCount;
         uint32_t mLastFrameCount;
         nsecs_t mLastFpsTime;
+        uint32_t mNextLastFrameCount;
+        nsecs_t mNextLastFpsTime;
 
         /**
          * Previous buffer's handle
@@ -261,9 +265,9 @@ class ExynosLayer : public ExynosMPPSource {
          */
         int32_t setCompositionType(int32_t type);
 
-        uint32_t checkFps();
+        float checkFps(bool increaseCount);
 
-        uint32_t getFps();
+        float getFps();
 
         int32_t doPreProcess();
 
@@ -458,7 +462,7 @@ class ExynosLayer : public ExynosMPPSource {
         int32_t setSrcExynosImage(exynos_image *src_img);
         int32_t setDstExynosImage(exynos_image *dst_img);
         int32_t resetAssignedResource();
-        bool checkDownscaleCap(uint32_t btsRefreshRate);
+        bool checkBtsCap(const uint32_t btsRefreshRate);
 
         void setSrcAcquireFence();
 

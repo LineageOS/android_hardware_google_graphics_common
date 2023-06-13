@@ -141,7 +141,7 @@ enum class PanelGammaSource {
 };
 
 enum class hwc_request_state_t {
-    SET_CONFIG_STATE_NONE = 0,
+    SET_CONFIG_STATE_DONE = 0,
     SET_CONFIG_STATE_PENDING,
     SET_CONFIG_STATE_REQUESTED,
 };
@@ -534,6 +534,10 @@ class ExynosDisplay {
 
         hwc2_config_t mActiveConfig = UINT_MAX;
 
+        bool mNotifyPeakRefreshRate = false;
+        std::mutex mPeakRefreshRateMutex;
+        std::condition_variable mPeakRefreshRateCondition;
+
         void initDisplay();
 
         int getId();
@@ -563,6 +567,8 @@ class ExynosDisplay {
         virtual void doPreProcessing();
 
         int checkLayerFps();
+
+        int switchDynamicReCompMode(dynamic_recomp_mode mode);
 
         int checkDynamicReCompMode();
 
@@ -1255,7 +1261,7 @@ class ExynosDisplay {
         void setMinDisplayVsyncPeriod(uint32_t period) { mMinDisplayVsyncPeriod = period; }
 
         bool isCurrentPeakRefreshRate(void) {
-            return ((mConfigRequestState == hwc_request_state_t::SET_CONFIG_STATE_NONE) &&
+            return ((mConfigRequestState == hwc_request_state_t::SET_CONFIG_STATE_DONE) &&
                     (mVsyncPeriod == mMinDisplayVsyncPeriod));
         }
 

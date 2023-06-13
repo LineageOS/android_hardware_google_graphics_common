@@ -153,6 +153,7 @@ class FramebufferManager {
 
         static constexpr size_t MAX_CACHED_LAYERS = 16;
         static constexpr size_t MAX_CACHED_BUFFERS_PER_LAYER = 32;
+        static constexpr size_t MAX_CACHED_SECURE_BUFFERS_PER_G2D_LAYER = 3;
 };
 
 inline bool isFramebuffer(const ExynosLayer *layer) {

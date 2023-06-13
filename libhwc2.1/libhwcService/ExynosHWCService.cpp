@@ -27,12 +27,8 @@ namespace android {
 
 ANDROID_SINGLETON_STATIC_INSTANCE(ExynosHWCService);
 
-ExynosHWCService::ExynosHWCService() :
-    mHWCService(NULL),
-    mHWCCtx(NULL),
-    bootFinishedCallback(NULL),
-    doPSRExit(NULL)
-{
+ExynosHWCService::ExynosHWCService()
+      : mHWCService(NULL), mHWCCtx(NULL), bootFinishedCallback(NULL) {
     ALOGD_IF(HWC_SERVICE_DEBUG, "ExynosHWCService Constructor is called");
 }
 
@@ -252,7 +248,7 @@ void ExynosHWCService::enableMPP(uint32_t physicalType, uint32_t physicalIndex, 
             __func__, physicalType, physicalIndex, logicalIndex, enable);
     ExynosResourceManager::enableMPP(physicalType, physicalIndex, logicalIndex, enable);
     mHWCCtx->device->setGeometryChanged(GEOMETRY_DEVICE_CONFIG_CHANGED);
-    mHWCCtx->device->onRefresh();
+    mHWCCtx->device->onRefreshDisplays();
 }
 
 void ExynosHWCService::setScaleDownRatio(uint32_t physicalType,
@@ -262,7 +258,7 @@ void ExynosHWCService::setScaleDownRatio(uint32_t physicalType,
             __func__, physicalType, physicalIndex, logicalIndex, scaleDownRatio);
     ExynosResourceManager::setScaleDownRatio(physicalType, physicalIndex, logicalIndex, scaleDownRatio);
     mHWCCtx->device->setGeometryChanged(GEOMETRY_DEVICE_CONFIG_CHANGED);
-    mHWCCtx->device->onRefresh();
+    mHWCCtx->device->onRefreshDisplays();
 }
 
 void ExynosHWCService::setLbeCtrl(uint32_t display_id, uint32_t state, uint32_t lux) {
@@ -322,6 +318,7 @@ int ExynosHWCService::setHWCCtl(uint32_t display, uint32_t ctrl, int32_t val)
     case HWC_CTL_ENABLE_EARLY_START_MPP:
     case HWC_CTL_DISPLAY_MODE:
     case HWC_CTL_DDI_RESOLUTION_CHANGE:
+    case HWC_CTL_DYNAMIC_RECOMP:
     case HWC_CTL_ENABLE_FENCE_TRACER:
     case HWC_CTL_SYS_FENCE_LOGGING:
     case HWC_CTL_DO_FENCE_FILE_DUMP:
@@ -336,11 +333,10 @@ int ExynosHWCService::setHWCCtl(uint32_t display, uint32_t ctrl, int32_t val)
     return err;
 }
 
-int ExynosHWCService::setDDIScaler(uint32_t width, uint32_t height)
-{
+int ExynosHWCService::setDDIScaler(uint32_t display_id, uint32_t width, uint32_t height) {
     ALOGD_IF(HWC_SERVICE_DEBUG, "%s, width=%d, height=%d", __func__, width, height);
     if (mHWCCtx) {
-        ExynosDisplay *display = (ExynosDisplay*)mHWCCtx->device->getDisplay(getDisplayId(HWC_DISPLAY_PRIMARY, 0));
+        ExynosDisplay *display = (ExynosDisplay *)mHWCCtx->device->getDisplay(display_id);
 
         if (display == NULL)
             return -EINVAL;
@@ -352,25 +348,6 @@ int ExynosHWCService::setDDIScaler(uint32_t width, uint32_t height)
         return -EINVAL;
     }
 }
-
-#if 0
-void ExynosHWCService::setPSRExitCallback(void (*callback)(exynos_hwc_composer_device_1_t *))
-{
-    ALOGD_IF(HWC_SERVICE_DEBUG, "%s, callback %p", __func__, callback);
-    doPSRExit = callback;
-}
-
-void ExynosHWCService::notifyPSRExit()
-{
-    ALOGD_IF(HWC_SERVICE_DEBUG, "%s, doPSRExit %p", __func__, doPSRExit);
-    if (doPSRExit != NULL) {
-        ALOGD_IF(HWC_SERVICE_DEBUG, "%s, line %d", __func__, __LINE__);
-        doPSRExit(mHWCCtx);
-    }
-    ALOGD_IF(HWC_SERVICE_DEBUG, "%s, line %d", __func__, __LINE__);
-}
-
-#endif
 
 int ExynosHWCService::createServiceLocked()
 {
@@ -482,7 +459,7 @@ int32_t ExynosHWCService::setDisplayRCDLayerEnabled(uint32_t displayIndex, bool 
     auto ret = primaryDisplay->setDebugRCDLayerEnabled(enable);
 
     mHWCCtx->device->setGeometryChanged(GEOMETRY_DEVICE_CONFIG_CHANGED);
-    mHWCCtx->device->onRefresh();
+    mHWCCtx->device->onRefresh(getDisplayId(HWC_DISPLAY_PRIMARY, displayIndex));
 
     return ret;
 }
@@ -511,7 +488,7 @@ int32_t ExynosHWCService::setDisplayDbm(int32_t display_id, uint32_t on) {
 
     ALOGD("ExynosHWCService::%s() display(%u) on=%d", __func__, display_id, on);
     display->setDbmState(!!on);
-    mHWCCtx->device->onRefresh();
+    mHWCCtx->device->onRefresh(display_id);
     return NO_ERROR;
 }
 

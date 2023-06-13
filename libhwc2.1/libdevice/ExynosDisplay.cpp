@@ -55,6 +55,8 @@ using ::aidl::google::hardware::power::extension::pixel::IPowerExt;
 extern struct exynos_hwc_control exynosHWCControl;
 extern struct update_time_info updateTimeInfo;
 
+constexpr float kDynamicRecompFpsThreshold = 1.0 / 5.0; // 1 frame update per 5 second
+
 constexpr float nsecsPerSec = std::chrono::nanoseconds(1s).count();
 constexpr int64_t nsecsIdleHintTimeout = std::chrono::nanoseconds(100ms).count();
 
@@ -353,7 +355,6 @@ void ExynosDisplay::PowerHalHintWorker::forceUpdateHints(void) {
 int32_t ExynosDisplay::PowerHalHintWorker::sendActualWorkDuration() {
     Lock();
     if (mPowerHintSession == nullptr) {
-        ALOGW("Cannot send actual work duration, power hint session not running");
         Unlock();
         return -EINVAL;
     }
@@ -392,7 +393,6 @@ int32_t ExynosDisplay::PowerHalHintWorker::updateTargetWorkDuration() {
     }
 
     if (mPowerHintSession == nullptr) {
-        ALOGW("Cannot send target work duration, power hint session not running");
         return -EINVAL;
     }
 
@@ -970,7 +970,7 @@ ExynosDisplay::ExynosDisplay(uint32_t index, ExynosDevice *device)
         mRenderingState(RENDERING_STATE_NONE),
         mHWCRenderingState(RENDERING_STATE_NONE),
         mDisplayBW(0),
-        mDynamicReCompMode(NO_MODE_SWITCH),
+        mDynamicReCompMode(CLIENT_2_DEVICE),
         mDREnable(false),
         mDRDefault(false),
         mLastFpsTime(0),
@@ -1000,7 +1000,7 @@ ExynosDisplay::ExynosDisplay(uint32_t index, ExynosDevice *device)
         mSkipFrame(false),
         mVsyncPeriodChangeConstraints{systemTime(SYSTEM_TIME_MONOTONIC), 0},
         mVsyncAppliedTimeLine{false, 0, systemTime(SYSTEM_TIME_MONOTONIC)},
-        mConfigRequestState(hwc_request_state_t::SET_CONFIG_STATE_NONE),
+        mConfigRequestState(hwc_request_state_t::SET_CONFIG_STATE_DONE),
         mPowerHalHint(getDisplayId(mDisplayId, mIndex)) {
     mDisplayControl.enableCompositionCrop = true;
     mDisplayControl.enableExynosCompositionOptimization = true;
@@ -1091,7 +1091,7 @@ void ExynosDisplay::initDisplay() {
     mGeometryChanged = 0x0;
     mRenderingState = RENDERING_STATE_NONE;
     mDisplayBW = 0;
-    mDynamicReCompMode = NO_MODE_SWITCH;
+    mDynamicReCompMode = CLIENT_2_DEVICE;
     mCursorIndex = -1;
 
     mDpuData.reset();
@@ -1162,6 +1162,7 @@ int32_t ExynosDisplay::destroyLayer(hwc2_layer_t outLayer) {
  * @return void
  */
 void ExynosDisplay::destroyLayers() {
+    Mutex::Autolock lock(mDRMutex);
     for (uint32_t index = 0; index < mLayers.size();) {
         ExynosLayer *layer = mLayers[index];
         mLayers.removeAt(index);
@@ -1194,6 +1195,7 @@ ExynosLayer *ExynosDisplay::checkLayer(hwc2_layer_t addr) {
 }
 
 void ExynosDisplay::checkIgnoreLayers() {
+    Mutex::Autolock lock(mDRMutex);
     for (auto it = mIgnoreLayers.begin(); it != mIgnoreLayers.end();) {
         ExynosLayer *layer = *it;
         if ((layer->mLayerFlag & EXYNOS_HWC_IGNORE_LAYER) == 0) {
@@ -1297,16 +1299,15 @@ int ExynosDisplay::checkLayerFps() {
     if (mDisplayControl.handleLowFpsLayers == false)
         return NO_ERROR;
 
+    Mutex::Autolock lock(mDRMutex);
+
     for (size_t i=0; i < mLayers.size(); i++) {
-         if ((mLayers[i]->mOverlayPriority < ePriorityHigh) &&
-             (mLayers[i]->getFps() < LOW_FPS_THRESHOLD)) {
-             mLowFpsLayerInfo.addLowFpsLayer(i);
-         } else {
-             if (mLowFpsLayerInfo.mHasLowFpsLayer == true)
-                 break;
-             else
-                 continue;
-         }
+        if ((mLayers[i]->mOverlayPriority < ePriorityHigh) &&
+            (mLayers[i]->getFps() < LOW_FPS_THRESHOLD)) {
+            mLowFpsLayerInfo.addLowFpsLayer(i);
+        } else if (mLowFpsLayerInfo.mHasLowFpsLayer == true) {
+            break;
+        }
     }
     /* There is only one low fps layer, Overlay is better in this case */
     if ((mLowFpsLayerInfo.mHasLowFpsLayer == true) &&
@@ -1316,91 +1317,92 @@ int ExynosDisplay::checkLayerFps() {
     return NO_ERROR;
 }
 
+int ExynosDisplay::switchDynamicReCompMode(dynamic_recomp_mode mode) {
+    if (mDynamicReCompMode == mode) return NO_MODE_SWITCH;
+
+    ATRACE_INT("Force client composition by DR", (mode == DEVICE_2_CLIENT));
+    mDynamicReCompMode = mode;
+    setGeometryChanged(GEOMETRY_DISPLAY_DYNAMIC_RECOMPOSITION);
+    return mode;
+}
+
 /**
  * @return int
  */
 int ExynosDisplay::checkDynamicReCompMode() {
-    unsigned int updateFps = 0;
-    unsigned int lcd_size = mXres * mYres;
-    uint64_t TimeStampDiff;
-    uint64_t w = 0, h = 0, incomingPixels = 0;
-    uint64_t maxFps = 0, layerFps = 0;
-
+    ATRACE_CALL();
     Mutex::Autolock lock(mDRMutex);
 
     if (!exynosHWCControl.useDynamicRecomp) {
         mLastModeSwitchTimeStamp = 0;
-        mDynamicReCompMode = NO_MODE_SWITCH;
-        return 0;
+        return switchDynamicReCompMode(CLIENT_2_DEVICE);
     }
 
     /* initialize the Timestamps */
     if (!mLastModeSwitchTimeStamp) {
         mLastModeSwitchTimeStamp = mLastUpdateTimeStamp;
-        mDynamicReCompMode = NO_MODE_SWITCH;
-        return 0;
+        return switchDynamicReCompMode(CLIENT_2_DEVICE);
     }
 
-    /* If video layer is there, skip the mode switch */
+    /* Avoid to use DEVICE_2_CLIENT if there's a layer with priority >= ePriorityHigh such as:
+     * front buffer, video layer, HDR, DRM layer, etc.
+     */
     for (size_t i = 0; i < mLayers.size(); i++) {
         if ((mLayers[i]->mOverlayPriority >= ePriorityHigh) ||
             mLayers[i]->mPreprocessedInfo.preProcessed) {
-            if (mDynamicReCompMode != DEVICE_2_CLIENT) {
-                return 0;
-            } else {
-                mDynamicReCompMode = CLIENT_2_DEVICE;
+            auto ret = switchDynamicReCompMode(CLIENT_2_DEVICE);
+            if (ret) {
                 mUpdateCallCnt = 0;
                 mLastModeSwitchTimeStamp = mLastUpdateTimeStamp;
                 DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] GLES_2_HWC by video layer");
-                setGeometryChanged(GEOMETRY_DISPLAY_DYNAMIC_RECOMPOSITION);
-                return CLIENT_2_DEVICE;
             }
+            return ret;
         }
     }
 
+    unsigned int incomingPixels = 0;
     for (size_t i = 0; i < mLayers.size(); i++) {
-        w = WIDTH(mLayers[i]->mPreprocessedInfo.displayFrame);
-        h = HEIGHT(mLayers[i]->mPreprocessedInfo.displayFrame);
+        auto w = WIDTH(mLayers[i]->mPreprocessedInfo.displayFrame);
+        auto h = HEIGHT(mLayers[i]->mPreprocessedInfo.displayFrame);
         incomingPixels += w * h;
     }
 
     /* Mode Switch is not required if total pixels are not more than the threshold */
-    if (incomingPixels <= lcd_size) {
-        if (mDynamicReCompMode != DEVICE_2_CLIENT) {
-            return 0;
-        } else {
-            mDynamicReCompMode = CLIENT_2_DEVICE;
+    unsigned int lcdSize = mXres * mYres;
+    if (incomingPixels <= lcdSize) {
+        auto ret = switchDynamicReCompMode(CLIENT_2_DEVICE);
+        if (ret) {
             mUpdateCallCnt = 0;
             mLastModeSwitchTimeStamp = mLastUpdateTimeStamp;
             DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] GLES_2_HWC by BW check");
-            setGeometryChanged(GEOMETRY_DISPLAY_DYNAMIC_RECOMPOSITION);
-            return CLIENT_2_DEVICE;
         }
+        return ret;
     }
 
     /*
      * There will be at least one composition call per one minute (because of time update)
-     * To minimize the analysis overhead, just analyze it once in a second
+     * To minimize the analysis overhead, just analyze it once in 5 second
      */
-    TimeStampDiff = systemTime(SYSTEM_TIME_MONOTONIC) - mLastModeSwitchTimeStamp;
+    auto timeStampDiff = systemTime(SYSTEM_TIME_MONOTONIC) - mLastModeSwitchTimeStamp;
 
     /*
-     * previous CompModeSwitch was CLIENT_2_DEVICE: check fps every 250ms from mLastModeSwitchTimeStamp
+     * previous CompModeSwitch was CLIENT_2_DEVICE: check fps after 5s from mLastModeSwitchTimeStamp
      * previous CompModeSwitch was DEVICE_2_CLIENT: check immediately
      */
-    if ((mDynamicReCompMode != DEVICE_2_CLIENT) && (TimeStampDiff < (VSYNC_INTERVAL * 15)))
+    if ((mDynamicReCompMode != DEVICE_2_CLIENT) && (timeStampDiff < kLayerFpsStableTimeNs))
         return 0;
 
     mLastModeSwitchTimeStamp = mLastUpdateTimeStamp;
+    float updateFps = 0;
     if ((mUpdateEventCnt != 1) &&
         (mDynamicReCompMode == DEVICE_2_CLIENT) && (mUpdateCallCnt == 1)) {
         DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] first frame after DEVICE_2_CLIENT");
-        updateFps = HWC_FPS_TH;
+        updateFps = kDynamicRecompFpsThreshold + 1;
     } else {
+        float maxFps = 0;
         for (uint32_t i = 0; i < mLayers.size(); i++) {
-            layerFps = mLayers[i]->getFps();
-            if (maxFps < layerFps)
-                maxFps = layerFps;
+            float layerFps = mLayers[i]->checkFps(/* increaseCount */ false);
+            if (maxFps < layerFps) maxFps = layerFps;
         }
         updateFps = maxFps;
     }
@@ -1408,26 +1410,22 @@ int ExynosDisplay::checkDynamicReCompMode() {
 
     /*
      * FPS estimation.
-     * If FPS is lower than HWC_FPS_TH, try to switch the mode to GLES
+     * If FPS is lower than kDynamicRecompFpsThreshold, try to switch the mode to GLES
      */
-    if (updateFps < HWC_FPS_TH) {
-        if (mDynamicReCompMode != DEVICE_2_CLIENT) {
-            mDynamicReCompMode = DEVICE_2_CLIENT;
-            DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] DEVICE_2_CLIENT by low FPS(%d)", updateFps);
-            setGeometryChanged(GEOMETRY_DISPLAY_DYNAMIC_RECOMPOSITION);
-            return DEVICE_2_CLIENT;
-        } else {
-            return 0;
+    if (updateFps < kDynamicRecompFpsThreshold) {
+        auto ret = switchDynamicReCompMode(DEVICE_2_CLIENT);
+        if (ret) {
+            DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] DEVICE_2_CLIENT by low FPS(%.2f)",
+                         updateFps);
         }
+        return ret;
     } else {
-        if (mDynamicReCompMode == DEVICE_2_CLIENT) {
-            mDynamicReCompMode = CLIENT_2_DEVICE;
-            DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] CLIENT_2_HWC by high FPS(%d)", updateFps);
-            setGeometryChanged(GEOMETRY_DISPLAY_DYNAMIC_RECOMPOSITION);
-            return CLIENT_2_DEVICE;
-        } else {
-            return 0;
+        auto ret = switchDynamicReCompMode(CLIENT_2_DEVICE);
+        if (ret) {
+            DISPLAY_LOGD(eDebugDynamicRecomp, "[DYNAMIC_RECOMP] CLIENT_2_HWC by high FPS((%.2f)",
+                         updateFps);
         }
+        return ret;
     }
 
     return 0;
@@ -1593,7 +1591,7 @@ bool ExynosDisplay::skipStaticLayerChanged(ExynosCompositionInfo& compositionInf
 }
 
 void ExynosDisplay::requestLhbm(bool on) {
-    mDevice->onRefresh();
+    mDevice->onRefresh(mDisplayId);
     if (mBrightnessController) {
         mBrightnessController->processLocalHbm(on);
     }
@@ -3464,7 +3462,7 @@ int32_t ExynosDisplay::presentDisplay(int32_t* outRetireFence) {
             ret = HWC2_ERROR_NOT_VALIDATED;
         }
         mRenderingState = RENDERING_STATE_PRESENTED;
-        mDevice->onRefresh();
+        mDevice->onRefresh(mDisplayId);
         return ret;
     }
 
@@ -4247,10 +4245,18 @@ int32_t ExynosDisplay::resetConfigRequestStateLocked(hwc2_config_t config) {
         DISPLAY_LOGI("%s: mConfigRequestState (%d) is not REQUESTED", __func__,
                      mConfigRequestState);
     } else {
-        DISPLAY_LOGD(eDebugDisplayInterfaceConfig, "%s: Change mConfigRequestState (%d) to NONE",
+        DISPLAY_LOGD(eDebugDisplayInterfaceConfig, "%s: Change mConfigRequestState (%d) to DONE",
                      __func__, mConfigRequestState);
-        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_NONE;
+        mConfigRequestState = hwc_request_state_t::SET_CONFIG_STATE_DONE;
         updateAppliedActiveConfig(mActiveConfig, systemTime(SYSTEM_TIME_MONOTONIC));
+
+        std::lock_guard<std::mutex> lock(mPeakRefreshRateMutex);
+        bool isPeakRefreshRate = isCurrentPeakRefreshRate();
+        ATRACE_INT("isPeakRefreshRate", isPeakRefreshRate);
+        if (isPeakRefreshRate && mNotifyPeakRefreshRate) {
+            mPeakRefreshRateCondition.notify_one();
+            mNotifyPeakRefreshRate = false;
+        }
     }
     return NO_ERROR;
 }
@@ -4373,7 +4379,7 @@ int ExynosDisplay::clearDisplay(bool needModeClear) {
     mLastRetireFence = fence_close(mLastRetireFence, this, FENCE_TYPE_RETIRE, FENCE_IP_DPP);
 
     if (mBrightnessController) {
-        mBrightnessController->onClearDisplay();
+        mBrightnessController->onClearDisplay(needModeClear);
     }
     return ret;
 }

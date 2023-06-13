@@ -326,6 +326,8 @@ bool ExynosResourceManager::DstBufMgrThread::threadLoop()
         ExynosDevice *device = mExynosResourceManager->mDevice;
         if (device == NULL)
             return false;
+
+        /* TODO(b/265244856): to clarify which display size to alloc */
         ExynosDisplay *display = device->getDisplay(getDisplayId(HWC_DISPLAY_PRIMARY, 0));
         if (display == NULL)
             return false;
@@ -447,7 +449,7 @@ int32_t ExynosResourceManager::assignResource(ExynosDisplay *display)
                     __func__, ret);
             return ret;
         }
-        preAssignWindows();
+        preAssignWindows(display);
 
     }
 
@@ -1083,7 +1085,7 @@ int32_t ExynosResourceManager::validateLayer(uint32_t index, ExynosDisplay *disp
         return eDynamicRecomposition;
 
     if ((layer->mLayerBuffer != NULL) &&
-            (display->mDisplayId == getDisplayId(HWC_DISPLAY_PRIMARY, 0)) &&
+            (display->mType == HWC_DISPLAY_PRIMARY) &&
             (mForceReallocState != DST_REALLOC_DONE)) {
         ALOGI("Device type assign skipping by dst reallocation...... ");
         return eReallocOnGoingForDDI;
@@ -2007,18 +2009,22 @@ int32_t ExynosResourceManager::preAssignResources()
     return NO_ERROR;
 }
 
-void ExynosResourceManager::preAssignWindows()
-{
-    ExynosDisplay *display = NULL;
-    ExynosPrimaryDisplayModule *primaryDisplay =
-        (ExynosPrimaryDisplayModule *)mDevice->getDisplay(getDisplayId(HWC_DISPLAY_PRIMARY, 0));
+void ExynosResourceManager::preAssignWindows(ExynosDisplay *display) {
+    ExynosPrimaryDisplayModule *primaryDisplay = NULL;
+
+    if (display->mType == HWC_DISPLAY_PRIMARY) {
+        primaryDisplay = (ExynosPrimaryDisplayModule *)display;
+    } else {
+        primaryDisplay = (ExynosPrimaryDisplayModule *)mDevice->getDisplay(
+                getDisplayId(HWC_DISPLAY_PRIMARY, 0));
+    }
+
     primaryDisplay->usePreDefinedWindow(false);
 
     for (size_t i = 1; i < mDevice->mDisplays.size(); i++) {
-        display = mDevice->mDisplays[i];
-        if ((display == NULL) || (display->mType != HWC_DISPLAY_EXTERNAL))
-            continue;
-        if (display->mPlugState == true) {
+        ExynosDisplay *disp = mDevice->mDisplays[i];
+        if ((disp == NULL) || (display->mType != HWC_DISPLAY_EXTERNAL)) continue;
+        if (disp->mPlugState == true) {
             primaryDisplay->usePreDefinedWindow(true);
         }
     }
@@ -2359,7 +2365,7 @@ int32_t ExynosResourceManager::initResourcesState(ExynosDisplay *display)
                     __func__, ret);
             return ret;
         }
-        preAssignWindows();
+        preAssignWindows(display);
 
     }
 

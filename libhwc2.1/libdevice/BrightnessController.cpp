@@ -60,6 +60,9 @@ int BrightnessController::initDrm(const DrmDevice& drmDevice,
 
     mLhbmSupported = connector.lhbm_on().id() != 0;
     mGhbmSupported = connector.hbm_mode().id() != 0;
+
+    /* allow the first brightness to apply */
+    mBrightnessFloatReq.set_dirty();
     return NO_ERROR;
 }
 
@@ -214,6 +217,9 @@ int BrightnessController::processDisplayBrightness(float brightness, const nsecs
 
     {
         std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
+        /* apply the first brightness */
+        if (mBrightnessFloatReq.is_dirty()) mBrightnessLevel.set_dirty();
+
         mBrightnessFloatReq.store(brightness);
         if (!mBrightnessFloatReq.is_dirty()) {
             return NO_ERROR;
@@ -381,13 +387,17 @@ float BrightnessController::getSdrDimRatioForInstantHbm() {
     return ratio;
 }
 
-void BrightnessController::onClearDisplay() {
+void BrightnessController::onClearDisplay(bool needModeClear) {
     resetLhbmState();
+    mInstantHbmReq.reset(false);
+
+    if (mBrightnessLevel.is_dirty()) applyBrightnessViaSysfs(mBrightnessLevel.get());
+
+    if (!needModeClear) return;
 
     std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
     mEnhanceHbmReq.reset(false);
     mBrightnessFloatReq.reset(-1);
-    mInstantHbmReq.reset(false);
 
     mBrightnessLevel.reset(0);
     mDisplayWhitePointNits = 0;
@@ -400,7 +410,7 @@ void BrightnessController::onClearDisplay() {
     }
 
     std::lock_guard<std::recursive_mutex> lock1(mCabcModeMutex);
-    mCabcMode.reset(false);
+    mCabcMode.reset(CabcMode::OFF);
 }
 
 int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
@@ -791,11 +801,15 @@ int BrightnessController::updateCabcMode() {
     if (!mCabcSupport || mCabcModeOfs.fail()) return HWC2_ERROR_UNSUPPORTED;
 
     std::lock_guard<std::recursive_mutex> lock(mCabcModeMutex);
-    bool mode = (!(isHdrLayerOn() || mOutdoorVisibility));
+    CabcMode mode;
+    if (mOutdoorVisibility)
+        mode = CabcMode::OFF;
+    else
+        mode = isHdrLayerOn() ? CabcMode::CABC_MOVIE_MODE : CabcMode::CABC_UI_MODE;
     mCabcMode.store(mode);
 
     if (mCabcMode.is_dirty()) {
-        applyCabcModeViaSysfs(mode);
+        applyCabcModeViaSysfs(static_cast<uint8_t>(mode));
         ALOGD("%s, isHdrLayerOn: %d, mOutdoorVisibility: %d.", __func__, isHdrLayerOn(),
               mOutdoorVisibility);
         mCabcMode.clear_dirty();

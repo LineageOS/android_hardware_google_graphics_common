@@ -262,7 +262,7 @@ void ExynosDeviceDrmInterface::ExynosDrmEventHandler::handleTUIEvent() {
     } else {
         /* Received TUI Exit event */
         if (mExynosDevice->isInTUI()) {
-            mExynosDevice->onRefresh();
+            mExynosDevice->onRefreshDisplays();
             mExynosDevice->exitFromTUI();
             ALOGV("%s:: DRM device out TUI", __func__);
         }

@@ -90,7 +90,7 @@ public:
      */
     float getSdrDimRatioForInstantHbm();
 
-    void onClearDisplay();
+    void onClearDisplay(bool needModeClear);
 
     /**
      * apply brightness change on drm path.
@@ -316,12 +316,19 @@ private:
     std::function<void(void)> mUpdateDcLhbm;
 
     // state for control CABC state
+    enum class CabcMode {
+        OFF = 0,
+        CABC_UI_MODE,
+        CABC_STILL_MODE,
+        CABC_MOVIE_MODE,
+    };
+
     static constexpr const char* kLocalCabcModeFileNode =
             "/sys/class/backlight/panel%d-backlight/cabc_mode";
     std::recursive_mutex mCabcModeMutex;
     bool mOutdoorVisibility GUARDED_BY(mCabcModeMutex) = false;
-    bool isHdrLayerOn() { return mHdrLayerState.get() != HdrLayerState::kHdrNone; }
-    CtrlValue<bool> mCabcMode GUARDED_BY(mCabcModeMutex);
+    bool isHdrLayerOn() { return mHdrLayerState.get() == HdrLayerState::kHdrLarge; }
+    CtrlValue<CabcMode> mCabcMode GUARDED_BY(mCabcModeMutex);
 };
 
 #endif // _BRIGHTNESS_CONTROLLER_H_

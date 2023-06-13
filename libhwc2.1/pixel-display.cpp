@@ -186,7 +186,7 @@ bool Display::runMediator(const RoiRect roi, const Weight weight, const Histogra
         ALOGE("histogram error, ENABLE_HIST ERROR\n");
     }
     if (mMediator.getFrameCount() != mMediator.getSampleFrameCounter()) {
-        mDisplay->mDevice->onRefresh(); // DRM not busy & sampled frame changed
+        mDisplay->mDevice->onRefresh(mDisplay->mDisplayId); // DRM not busy & sampled frame changed
     }
     if (mMediator.collectRoiLuma(histogrambuffer) != HistogramErrorCode::NONE) {
         ALOGE("histogram error, COLLECT_ROI_LUMA ERROR\n");
