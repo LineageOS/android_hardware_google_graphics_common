@@ -174,7 +174,7 @@ ndk::ScopedAStatus Display::setCompensationImageHandle(const NativeHandle &nativ
 
 ndk::ScopedAStatus Display::setMinIdleRefreshRate(int fps, int *_aidl_return) {
     if (mDisplay) {
-        *_aidl_return = mDisplay->setMinIdleRefreshRate(fps);
+        *_aidl_return = mDisplay->setMinIdleRefreshRate(fps, VrrThrottleRequester::PIXEL_DISP);
         return ndk::ScopedAStatus::ok();
     }
     return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);

@@ -221,7 +221,7 @@ public:
      * @return          : true if padding is congured successfully.
      *                    false, otherwise.
      */
-    virtual bool SetPadding(unsigned char padding[], unsigned int num_planes) = 0;
+    virtual bool SetPadding(const unsigned char padding[], unsigned int num_planes) = 0;
     /*
      * SetPadding2 - Configures padding per plane for thumbnail image
      * @padding[in]     : padding per plane
@@ -229,7 +229,8 @@ public:
      * @return          : true if padding is congured successfully.
      *                    false, otherwise.
      */
-    virtual bool SetPadding2(unsigned char __unused padding[], unsigned int __unused num_planes) {
+    virtual bool SetPadding2(const unsigned char __unused padding[],
+                             unsigned int __unused num_planes) {
         return false;
     }
     /*
@@ -541,7 +542,8 @@ class CHWJpegM2M1SHOTCompressor: public CHWJpegCompressor {
 
 #define TO_SEC_IMG_SIZE(val) (((val) >> 16) & 0xFFFF)
 
-class CHWJpegV4L2Compressor : public CHWJpegCompressor, private CHWJpegFlagManager {
+class CAPABILITY("CHWJpegV4L2Compressor") CHWJpegV4L2Compressor : public CHWJpegCompressor,
+                                                                  private CHWJpegFlagManager {
     enum {
         HWJPEG_CTRL_CHROMFACTOR = 0,
         HWJPEG_CTRL_QFACTOR,
@@ -584,7 +586,12 @@ class CHWJpegV4L2Compressor : public CHWJpegCompressor, private CHWJpegFlagManag
 
     bool m_bEnableHWFC;
 
+    // File lock required for interprocess synchronization.
     FileLock file_lock_;
+
+    // Mutex required for in-process synchronization. This is necessary because the file lock does
+    // not block if the same process attempts to acquire it again.
+    std::mutex mutex_;
 
     bool IsB2BCompression() {
         return (TO_SEC_IMG_SIZE(m_v4l2Format.fmt.pix_mp.width) +
@@ -592,15 +599,15 @@ class CHWJpegV4L2Compressor : public CHWJpegCompressor, private CHWJpegFlagManag
     }
 
     // V4L2 Helpers
-    bool TryFormat();
-    bool SetFormat();
-    bool UpdateControls();
-    bool ReqBufs(unsigned int count = 1);
-    bool StreamOn();
-    bool StreamOff();
-    bool QBuf();
-    ssize_t DQBuf(size_t *secondary_stream_size);
-    bool StopStreaming();
+    bool TryFormat() REQUIRES(this);
+    bool SetFormat() REQUIRES(this);
+    bool UpdateControls() REQUIRES(this);
+    bool ReqBufs(unsigned int count = 1) REQUIRES(this);
+    bool StreamOn() REQUIRES(this);
+    bool StreamOff() REQUIRES(this);
+    bool QBuf() REQUIRES(this);
+    ssize_t DQBuf(size_t *secondary_stream_size) REQUIRES(this);
+    bool StopStreaming() REQUIRES(this);
 
 public:
     CHWJpegV4L2Compressor();
@@ -617,9 +624,9 @@ public:
     // SetChromaSampFactor can be called during streaming
     virtual bool SetChromaSampFactor(unsigned int horizontal, unsigned int vertical);
     virtual bool SetQuality(unsigned int quality_factor, unsigned int quality_factor2 = 0);
-    virtual bool SetQuality(const unsigned char qtable[]);
-    virtual bool SetPadding(unsigned char padding[], unsigned int num_planes);
-    virtual bool SetPadding2(unsigned char padding[], unsigned int num_planes);
+    virtual bool SetQuality(const unsigned char qtable[]) REQUIRES(this);
+    virtual bool SetPadding(const unsigned char padding[], unsigned int num_planes);
+    virtual bool SetPadding2(const unsigned char padding[], unsigned int num_planes);
 
     virtual bool SetImageFormat(unsigned int v4l2_fmt, unsigned int width, unsigned int height,
                                 unsigned int sec_width = 0, unsigned sec_height = 0);

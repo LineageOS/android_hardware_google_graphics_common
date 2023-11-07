@@ -367,6 +367,9 @@ class ExynosDevice {
     private:
         bool mIsInTUI;
         bool mDisplayOffAsync;
+
+    public:
+        void handleHotplug();
 };
 
 #endif //_EXYNOSDEVICE_H

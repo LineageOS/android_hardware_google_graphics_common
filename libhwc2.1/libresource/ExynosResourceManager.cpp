@@ -161,6 +161,7 @@ ExynosResourceManager::ExynosResourceManager(ExynosDevice *device)
     char value[PROPERTY_VALUE_MAX];
     mMinimumSdrDimRatio = property_get("debug.hwc.min_sdr_dimming", value, nullptr) > 0
                           ? std::atof(value) : 0.0f;
+    updateSupportWCG();
 }
 
 ExynosResourceManager::~ExynosResourceManager()
@@ -394,6 +395,12 @@ int32_t ExynosResourceManager::assignResource(ExynosDisplay *display)
                 __func__, ret);
         return ret;
     }
+
+    if ((ret = display->updateColorConversionInfo()) != NO_ERROR) {
+        HWC_LOGE(display, "%s:: updateColorConversionInfo() fail, ret(%d)", __func__, ret);
+        return ret;
+    }
+    display->checkPreblendingRequirement();
 
     HDEBUGLOGD(eDebugTDM, "%s layer's calculation start", __func__);
     for (uint32_t i = 0; i < display->mLayers.size(); i++) {
@@ -2226,7 +2233,7 @@ int32_t ExynosResourceManager::deliverPerformanceInfo()
                             mppSource->mSrcImg.w, mppSource->mSrcImg.h,
                             mppSource->mSrcImg.format);
 
-                    if (mppSource->mSrcImg.compressed == 1)
+                    if (mppSource->mSrcImg.compressionInfo.type == COMP_TYPE_AFBC)
                         frame->setAttribute(j, AcrylicCanvas::ATTR_COMPRESSED);
 
                     hwc_rect_t src_area;
@@ -2445,7 +2452,8 @@ void ExynosResourceManager::makeFormatRestrictions(restriction_key_t table) {
     HDEBUGLOGD(eDebugDefault, "MPP : %s, %d, %s, %d",
                getMPPStr(mFormatRestrictions[mFormatRestrictionCnt].hwType).string(),
                mFormatRestrictions[mFormatRestrictionCnt].nodeType,
-               getFormatStr(mFormatRestrictions[mFormatRestrictionCnt].format, COMP_ANY).string(),
+               getFormatStr(mFormatRestrictions[mFormatRestrictionCnt].format, COMP_TYPE_MASK)
+                       .string(),
                mFormatRestrictions[mFormatRestrictionCnt].reserved);
     mFormatRestrictionCnt++;
 }
@@ -2578,16 +2586,34 @@ void ExynosResourceManager::updateRestrictions() {
         }
     }
 
+    ExynosDisplay *display = NULL;
+    bool isExistSecondaryDisplay = false;
+
+    for (size_t i = 1; i < mDevice->mDisplays.size(); i++) {
+        display = mDevice->mDisplays[i];
+        if ((display->mType == HWC_DISPLAY_PRIMARY) && (display->mIndex == 1))
+            isExistSecondaryDisplay = true;
+    }
+
     for (uint32_t i = 0; i < mOtfMPPs.size(); i++) {
         // mAttr should be updated with updated feature_table
         mOtfMPPs[i]->updateAttr();
         mOtfMPPs[i]->setupRestriction();
+        if (!isExistSecondaryDisplay) {
+            /*
+             * If there is no Secondary Display, the pre-assigned resources for Secondary Display
+             * are pre-assigned to Primary Display.
+             */
+            mOtfMPPs[i]->updatePreassignedDisplay(HWC_DISPLAY_SECONDARY_BIT, HWC_DISPLAY_PRIMARY_BIT);
+        }
     }
 
     for (uint32_t i = 0; i < mM2mMPPs.size(); i++) {
         // mAttr should be updated with updated feature_table
         mM2mMPPs[i]->updateAttr();
         mM2mMPPs[i]->setupRestriction();
+        if (!isExistSecondaryDisplay)
+            mM2mMPPs[i]->updatePreassignedDisplay(HWC_DISPLAY_SECONDARY_BIT, HWC_DISPLAY_PRIMARY_BIT);
     }
 }
 
@@ -2719,17 +2745,16 @@ uint32_t ExynosResourceManager::needHWResource(ExynosDisplay *display, exynos_im
 
     switch (attr) {
         case TDM_ATTR_SBWC:
-            ret = (isFormatSBWC(srcImg.format)) ? 1 : 0;
+            ret = (srcImg.compressionInfo.type == COMP_TYPE_SBWC) ? 1 : 0;
             break;
         case TDM_ATTR_AFBC:
-            ret = (srcImg.compressed) ? 1 : 0;
+            ret = (srcImg.compressionInfo.type == COMP_TYPE_AFBC) ? 1 : 0;
             break;
         case TDM_ATTR_ITP:
             ret = (isFormatYUV(srcImg.format)) ? 1 : 0;
             break;
         case TDM_ATTR_WCG:
-            ret = (needHdrProcessing(display, srcImg, dstImg)) ? 1 : 0;
-            HDEBUGLOGD(eDebugTDM, "needHdrProcessing : %d", ret);
+            ret = (srcImg.needPreblending) ? 1 : 0;
             break;
         case TDM_ATTR_ROT_90:
             ret = ((srcImg.transform & HAL_TRANSFORM_ROT_90) == 0) ? 0 : 1;

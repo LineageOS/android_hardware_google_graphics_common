@@ -159,7 +159,7 @@ int ExynosJpegEncoderForCamera::setThumbnailQuality(int quality) {
     return GetCompressor().SetQuality(0, m_nThumbQuality) ? 0 : -1;
 }
 
-int ExynosJpegEncoderForCamera::setThumbnailPadding(unsigned char *padding,
+int ExynosJpegEncoderForCamera::setThumbnailPadding(const unsigned char *padding,
                                                     unsigned int num_planes) {
     return GetCompressor().SetPadding2(padding, num_planes) ? 0 : -1;
 }

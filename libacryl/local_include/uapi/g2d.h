@@ -230,11 +230,12 @@ struct g2d_buffer {
 };
 
 #define G2D_LAYERFLAG_ACQUIRE_FENCE (1 << 1)
-#define G2D_LAYERFLAG_SECURE        (1 << 2)
-#define G2D_LAYERFLAG_COLORFILL     (1 << 3)
-#define G2D_LAYERFLAG_MFC_STRIDE    (1 << 4)
+#define G2D_LAYERFLAG_SECURE (1 << 2)
+#define G2D_LAYERFLAG_COLORFILL (1 << 3)
+#define G2D_LAYERFLAG_MFC_STRIDE (1 << 4)
+#define G2D_LAYERFLAG_AFBC_WIDEBLK (1 << 5)
 #define G2D_LAYERFLAG_NO_CACHECLEAN (1 << 16)
-#define G2D_LAYERFLAG_NO_CACHEINV   (1 << 17)
+#define G2D_LAYERFLAG_NO_CACHEINV (1 << 17)
 
 struct g2d_layer {
     uint32_t          flags;

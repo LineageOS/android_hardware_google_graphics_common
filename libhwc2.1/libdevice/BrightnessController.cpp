@@ -22,6 +22,94 @@
 #include "BrightnessController.h"
 #include "ExynosHWCModule.h"
 
+void BrightnessController::LinearBrightnessTable::Init(const struct brightness_capability* cap) {
+    if (!cap) {
+        return;
+    }
+    setBrightnessRangeFromAttribute(cap->normal, mBrightnessRanges[BrightnessMode::BM_NOMINAL]);
+    setBrightnessRangeFromAttribute(cap->hbm, mBrightnessRanges[BrightnessMode::BM_HBM]);
+    if (mBrightnessRanges[BrightnessMode::BM_NOMINAL].brightness_max ==
+        mBrightnessRanges[BrightnessMode::BM_HBM].brightness_min) {
+        mBrightnessRanges[BrightnessMode::BM_HBM].brightness_min_exclusive = true;
+    }
+    if (!mBrightnessRanges.at(BrightnessMode::BM_NOMINAL).IsValid()) {
+        ALOGE("%s: brightness range for BM_NOMINAL is invalid!", __func__);
+        return;
+    }
+    //  BM_HBM range is optional for some devices
+    if (mBrightnessRanges.count(BrightnessMode::BM_HBM) > 0) {
+        if (!mBrightnessRanges.at(BrightnessMode::BM_HBM).IsValid()) {
+            ALOGE("%s: brightness range for BM_HBM is invalid!", __func__);
+            return;
+        }
+    }
+    mIsValid = true;
+}
+
+std::optional<float> BrightnessController::LinearBrightnessTable::NitsToBrightness(
+        float nits) const {
+    BrightnessMode mode = GetBrightnessModeForNits(nits);
+    if (mode == BrightnessMode::BM_INVALID) {
+        return std::nullopt;
+    }
+
+    const DisplayBrightnessRange& range = mBrightnessRanges.at(mode);
+    const float brightness = LinearInterpolation(nits,
+        range.nits_min, range.nits_max,
+        range.brightness_min, range.brightness_max);
+    if (isnan(brightness)) {
+        return std::nullopt;
+    }
+
+    return brightness;
+}
+
+std::optional<float> BrightnessController::LinearBrightnessTable::BrightnessToNits(
+        float brightness, BrightnessMode& bm) const {
+    bm = GetBrightnessMode(brightness);
+    if (bm == BrightnessMode::BM_MAX) {
+        return std::nullopt;
+    }
+    const DisplayBrightnessRange& range = mBrightnessRanges.at(bm);
+    float nits = LinearInterpolation(brightness, range.brightness_min, range.brightness_max,
+                                     range.nits_min, range.nits_max);
+    if (isnan(nits)) {
+        return std::nullopt;
+    }
+
+    return nits;
+}
+
+std::optional<uint32_t> BrightnessController::LinearBrightnessTable::NitsToDbv(BrightnessMode bm,
+                                                                               float nits) const {
+    if (mBrightnessRanges.count(bm) == 0) {
+        return std::nullopt;
+    }
+    const auto& range = mBrightnessRanges.at(bm);
+    float dbv = 0.0;
+
+    dbv = LinearInterpolation(nits, range.nits_min, range.nits_max, range.dbv_min, range.dbv_max);
+    if (isnan(dbv) || dbv < 0) {
+        return std::nullopt;
+    }
+    return lround(dbv);
+}
+
+std::optional<float> BrightnessController::LinearBrightnessTable::DbvToNits(BrightnessMode bm,
+                                                                            uint32_t dbv) const {
+    if (mBrightnessRanges.count(bm) == 0) {
+        return std::nullopt;
+    }
+    const auto& range = mBrightnessRanges.at(bm);
+    float nits = 0.0;
+
+    nits = LinearInterpolation(dbv, range.dbv_min, range.dbv_max, range.nits_min, range.nits_max);
+    if (isnan(nits)) {
+        return std::nullopt;
+    }
+    return nits;
+}
+
 BrightnessController::BrightnessController(int32_t panelIndex, std::function<void(void)> refresh,
                                            std::function<void(void)> updateDcLhbm)
       : mPanelIndex(panelIndex),
@@ -35,6 +123,7 @@ BrightnessController::BrightnessController(int32_t panelIndex, std::function<voi
         mSdrDim(false),
         mPrevSdrDim(false),
         mDimBrightnessReq(false),
+        mOperationRate(0),
         mFrameRefresh(refresh),
         mHdrLayerState(HdrLayerState::kHdrNone),
         mUpdateDcLhbm(updateDcLhbm) {
@@ -52,8 +141,44 @@ BrightnessController::~BrightnessController() {
     }
 }
 
-int BrightnessController::initDrm(const DrmDevice& drmDevice,
-                                  const DrmConnector& connector) {
+void BrightnessController::updateBrightnessTable(const IBrightnessTable* table) {
+    if (table && table->GetBrightnessRange(BrightnessMode::BM_NOMINAL)) {
+        ALOGI("%s: apply brightness table from libdisplaycolor", __func__);
+        mBrightnessTable = table;
+    } else {
+        ALOGW("%s: table is not valid!", __func__);
+    }
+    if (!mBrightnessTable) {
+        ALOGE("%s: brightness table is not available!", __func__);
+        return;
+    }
+    auto normal_range = mBrightnessTable->GetBrightnessRange(BrightnessMode::BM_NOMINAL);
+    if (!normal_range) {
+        ALOGE("%s: normal brightness range not available!", __func__);
+        return;
+    }
+
+    // init to min before SF sets the brightness
+    mDisplayWhitePointNits = normal_range.value().get().nits_min;
+    mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
+    mBrightnessIntfSupported = true;
+
+    String8 nodeName;
+    nodeName.appendFormat(kDimBrightnessFileNode, mPanelIndex);
+
+    std::ifstream ifsDimBrightness(nodeName.string());
+    if (ifsDimBrightness.fail()) {
+        ALOGW("%s fail to open %s", __func__, nodeName.string());
+    } else {
+        ifsDimBrightness >> mDimBrightness;
+        ifsDimBrightness.close();
+        if (mDimBrightness >= normal_range.value().get().dbv_min) mDimBrightness = 0;
+    }
+    mDbmSupported = !!mDimBrightness;
+    ALOGI("%s mDimBrightness=%d, mDbmSupported=%d", __func__, mDimBrightness, mDbmSupported);
+}
+
+int BrightnessController::initDrm(const DrmDevice& drmDevice, const DrmConnector& connector) {
     initBrightnessTable(drmDevice, connector);
 
     initDimmingUsage();
@@ -92,7 +217,6 @@ void BrightnessController::initBrightnessSysfs() {
     mBrightnessOfs.open(nodeName.string(), std::ofstream::out);
     if (mBrightnessOfs.fail()) {
         ALOGE("%s %s fail to open", __func__, nodeName.string());
-        mBrightnessOfs.close();
         return;
     }
 
@@ -107,6 +231,19 @@ void BrightnessController::initBrightnessSysfs() {
 
     ifsMaxBrightness >> mMaxBrightness;
     ifsMaxBrightness.close();
+
+    nodeName.clear();
+    nodeName.appendFormat(kGlobalAclModeFileNode, mPanelIndex);
+    mAclModeOfs.open(nodeName.string(), std::ofstream::out);
+    if (mAclModeOfs.fail()) {
+        ALOGI("%s %s not supported", __func__, nodeName.string());
+    } else {
+        String8 propName;
+        propName.appendFormat(kAclModeDefaultPropName, mPanelIndex);
+
+        mAclModeDefault = static_cast<AclMode>(property_get_int32(propName, 0));
+        mAclMode.set_dirty();
+    }
 }
 
 void BrightnessController::initCabcSysfs() {
@@ -119,7 +256,6 @@ void BrightnessController::initCabcSysfs() {
     mCabcModeOfs.open(nodeName.string(), std::ofstream::out);
     if (mCabcModeOfs.fail()) {
         ALOGE("%s %s fail to open", __func__, nodeName.string());
-        mCabcModeOfs.close();
         return;
     }
 }
@@ -150,32 +286,14 @@ void BrightnessController::initBrightnessTable(const DrmDevice& drmDevice,
 
     const struct brightness_capability *cap =
             reinterpret_cast<struct brightness_capability *>(blob->data);
-    mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)] = BrightnessTable(cap->normal);
-    mBrightnessTable[toUnderlying(BrightnessRange::HBM)] = BrightnessTable(cap->hbm);
+    mKernelBrightnessTable.Init(cap);
+    if (mKernelBrightnessTable.IsValid()) {
+        mBrightnessTable = &mKernelBrightnessTable;
+    }
 
     parseHbmModeEnums(connector.hbm_mode());
 
-    // init to min before SF sets the brightness
-    mDisplayWhitePointNits = cap->normal.nits.min;
-    mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
-    mBrightnessIntfSupported = true;
-
     drmModeFreePropertyBlob(blob);
-
-    String8 nodeName;
-    nodeName.appendFormat(kDimBrightnessFileNode, mPanelIndex);
-
-    std::ifstream ifsDimBrightness(nodeName.string());
-    if (ifsDimBrightness.fail()) {
-        ALOGW("%s fail to open %s", __func__, nodeName.string());
-    } else {
-        ifsDimBrightness >> mDimBrightness;
-        ifsDimBrightness.close();
-        if (mDimBrightness >= mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBklStart)
-            mDimBrightness = 0;
-    }
-    mDbmSupported = !!mDimBrightness;
-    ALOGI("%s mDimBrightness=%d, mDbmSupported=%d", __func__, mDimBrightness, mDbmSupported);
 }
 
 int BrightnessController::processEnhancedHbm(bool on) {
@@ -200,10 +318,42 @@ void BrightnessController::processDimmingOff() {
     }
 }
 
+int BrightnessController::updateAclMode() {
+    if (!mAclModeOfs.is_open()) return HWC2_ERROR_UNSUPPORTED;
+
+    if (mColorRenderIntent.get() == ColorRenderIntent::COLORIMETRIC) {
+        mAclMode.store(AclMode::ACL_ENHANCED);
+    } else {
+        mAclMode.store(mAclModeDefault);
+    }
+
+    if (!mAclMode.is_dirty()) return NO_ERROR;
+
+    mAclModeOfs.seekp(std::ios_base::beg);
+    mAclModeOfs << std::to_string(static_cast<uint8_t>(mAclMode.get()));
+    mAclModeOfs.flush();
+    if (mAclModeOfs.fail()) {
+        ALOGW("%s write acl_mode to %d error = %s", __func__, mAclMode.get(), strerror(errno));
+        mAclModeOfs.clear();
+        return HWC2_ERROR_NO_RESOURCES;
+    }
+
+    mAclMode.clear_dirty();
+    ALOGI("%s acl_mode = %d", __func__, mAclMode.get());
+
+    return NO_ERROR;
+}
+
 int BrightnessController::processDisplayBrightness(float brightness, const nsecs_t vsyncNs,
                                                    bool waitPresent) {
     uint32_t level;
     bool ghbm;
+
+    if (mIgnoreBrightnessUpdateRequests) {
+        ALOGI("%s: Brightness update is ignored. requested: %f, current: %f",
+            __func__, brightness, mBrightnessFloatReq.get());
+        return NO_ERROR;
+    }
 
     if (brightness < -1.0f || brightness > 1.0f) {
         return HWC2_ERROR_BAD_PARAMETER;
@@ -269,6 +419,26 @@ int BrightnessController::processDisplayBrightness(float brightness, const nsecs
     return applyBrightnessViaSysfs(level);
 }
 
+int BrightnessController::ignoreBrightnessUpdateRequests(bool ignore) {
+    mIgnoreBrightnessUpdateRequests = ignore;
+
+    return NO_ERROR;
+}
+
+int BrightnessController::setBrightnessNits(float nits, const nsecs_t vsyncNs) {
+    ALOGI("%s set brightness to %f nits", __func__,  nits);
+
+    std::optional<float> brightness = mBrightnessTable ?
+        mBrightnessTable->NitsToBrightness(nits) : std::nullopt;
+
+    if (brightness == std::nullopt) {
+        ALOGI("%s could not find brightness for %f nits", __func__, nits);
+        return -EINVAL;
+    }
+
+    return processDisplayBrightness(brightness.value(), vsyncNs);
+}
+
 // In HWC3, brightness change could be applied via drm commit or sysfs path.
 // If a brightness change command does not come with a frame update, this
 // function wil be called to apply the brghtness change via sysfs path.
@@ -292,6 +462,15 @@ int BrightnessController::applyPendingChangeViaSysfs(const nsecs_t vsyncNs) {
         // there will be a drm commit to apply this brightness change if a LHBM change is pending.
         if (mLhbm.is_dirty()) {
             ALOGI("%s standalone brightness change will be handled by next frame update for LHBM",
+                  __func__);
+            return NO_ERROR;
+        }
+
+        // there will be a drm commit to apply this brightness change if a operation rate change is
+        // pending.
+        if (mOperationRate.is_dirty()) {
+            ALOGI("%s standalone brightness change will be handled by next frame update for "
+                  "operation rate",
                   __func__);
             return NO_ERROR;
         }
@@ -344,6 +523,14 @@ void BrightnessController::updateFrameStates(HdrLayerState hdrState, bool sdrDim
     }
 }
 
+void BrightnessController::updateColorRenderIntent(int32_t intent) {
+    mColorRenderIntent.store(static_cast<ColorRenderIntent>(intent));
+    if (mColorRenderIntent.is_dirty()) {
+        updateAclMode();
+        ALOGI("%s Color Render Intent = %d", __func__, mColorRenderIntent.get());
+    }
+}
+
 int BrightnessController::processInstantHbm(bool on) {
     if (!mGhbmSupported) {
         return HWC2_ERROR_UNSUPPORTED;
@@ -382,7 +569,12 @@ float BrightnessController::getSdrDimRatioForInstantHbm() {
         return 1.0f;
     }
 
-    float peak = mBrightnessTable[toUnderlying(BrightnessRange::MAX) - 1].mNitsEnd;
+    auto hbm_range = mBrightnessTable->GetBrightnessRange(BrightnessMode::BM_HBM);
+    if (!hbm_range) {
+        ALOGE("%s error HBM brightness range not available!", __func__);
+        return 1.0f;
+    }
+    float peak = hbm_range.value().get().nits_max;
     if (sdr == 0 || peak == 0) {
         ALOGW("%s error luminance value sdr %f peak %f", __func__, sdr, peak);
         return 1.0f;
@@ -395,6 +587,19 @@ float BrightnessController::getSdrDimRatioForInstantHbm() {
     }
 
     return ratio;
+}
+
+int BrightnessController::processOperationRate(int32_t hz) {
+    std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
+    if (mOperationRate.get() != hz) {
+        ATRACE_CALL();
+        ALOGI("%s: store operation rate %d", __func__, hz);
+        mOperationRate.set_dirty();
+        mOperationRate.store(hz);
+        updateStates();
+    }
+
+    return NO_ERROR;
 }
 
 void BrightnessController::onClearDisplay(bool needModeClear) {
@@ -418,21 +623,22 @@ void BrightnessController::onClearDisplay(bool needModeClear) {
     if (mBrightnessDimmingUsage == BrightnessDimmingUsage::NORMAL) {
         mDimming.store(true);
     }
+    mOperationRate.reset(0);
 
     std::lock_guard<std::recursive_mutex> lock1(mCabcModeMutex);
     mCabcMode.reset(CabcMode::OFF);
 }
 
-int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
-                              const DrmConnector& connector,
-                              ExynosDisplayDrmInterface::DrmModeAtomicReq& drmReq,
-                              const bool mixedComposition,
-                              bool& ghbmSync, bool& lhbmSync, bool& blSync) {
+int BrightnessController::prepareFrameCommit(ExynosDisplay& display, const DrmConnector& connector,
+                                             ExynosDisplayDrmInterface::DrmModeAtomicReq& drmReq,
+                                             const bool mixedComposition, bool& ghbmSync,
+                                             bool& lhbmSync, bool& blSync, bool& opRateSync) {
     int ret;
 
     ghbmSync = false;
     lhbmSync = false;
     blSync = false;
+    opRateSync = false;
 
     ATRACE_CALL();
     std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
@@ -472,10 +678,14 @@ int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
             if (display.getColorAdjustedDbv(dbv_adj)) {
                 ALOGW("failed to get adjusted dbv");
             } else if (dbv_adj != dbv && dbv_adj != 0) {
-                dbv_adj = std::clamp(dbv_adj,
-                        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBklStart,
-                        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBklEnd);
-
+                if (mBrightnessTable) {
+                    auto normal_range =
+                            mBrightnessTable->GetBrightnessRange(BrightnessMode::BM_NOMINAL);
+                    if (normal_range) {
+                        dbv_adj = std::clamp(dbv_adj, normal_range.value().get().dbv_min,
+                                             normal_range.value().get().dbv_max);
+                    }
+                }
                 ALOGI("lhbm: adjust dbv from %d to %d", dbv, dbv_adj);
                 dbv = dbv_adj;
                 mLhbmBrightnessAdj = (dbv != old_dbv);
@@ -539,6 +749,17 @@ int BrightnessController::prepareFrameCommit(ExynosDisplay& display,
     }
 
     mHdrLayerState.clear_dirty();
+
+    if (mOperationRate.is_dirty()) {
+        if ((ret = drmReq.atomicAddProperty(connector.id(), connector.operation_rate(),
+                                            mOperationRate.get())) < 0) {
+            ALOGE("%s: Fail to set operation_rate property", __func__);
+        } else {
+            opRateSync = sync;
+        }
+        mOperationRate.clear_dirty();
+    }
+
     return NO_ERROR;
 }
 
@@ -651,12 +872,14 @@ int BrightnessController::queryBrightness(float brightness, bool *ghbm, uint32_t
         return HWC2_ERROR_UNSUPPORTED;
     }
 
-    if (mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBklStart == 0 &&
-        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBklEnd == 0 &&
-        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBriStart == 0 &&
-        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mBriEnd == 0 &&
-        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mNitsStart == 0 &&
-        mBrightnessTable[toUnderlying(BrightnessRange::NORMAL)].mNitsEnd == 0) {
+    if (mBrightnessTable == nullptr) {
+        ALOGE("%s: brightness table is empty!", __func__);
+        return HWC2_ERROR_UNSUPPORTED;
+    }
+
+    auto normal_range = mBrightnessTable->GetBrightnessRange(BrightnessMode::BM_NOMINAL);
+    if (!normal_range) {
+        ALOGE("%s: normal brightness range not available!", __func__);
         return HWC2_ERROR_UNSUPPORTED;
     }
 
@@ -674,36 +897,33 @@ int BrightnessController::queryBrightness(float brightness, bool *ghbm, uint32_t
         return NO_ERROR;
     }
 
-    for (uint32_t i = 0; i < toUnderlying(BrightnessRange::MAX); ++i) {
-        if (brightness <= mBrightnessTable[i].mBriEnd) {
-            if (ghbm) {
-                *ghbm = (i == toUnderlying(BrightnessRange::HBM));
-            }
-
-            if (level || nits) {
-                auto fSpan = mBrightnessTable[i].mBriEnd - mBrightnessTable[i].mBriStart;
-                auto norm = fSpan == 0 ? 1 : (brightness - mBrightnessTable[i].mBriStart) / fSpan;
-
-                if (level) {
-                    auto iSpan = mBrightnessTable[i].mBklEnd - mBrightnessTable[i].mBklStart;
-                    auto bl = norm * iSpan + mBrightnessTable[i].mBklStart;
-                    *level = static_cast<uint32_t>(bl + 0.5);
-                }
-
-                if (nits) {
-                    auto nSpan = mBrightnessTable[i].mNitsEnd - mBrightnessTable[i].mNitsStart;
-                    *nits = norm * nSpan + mBrightnessTable[i].mNitsStart;
-                }
-            }
-            if ((i == toUnderlying(BrightnessRange::NORMAL)) && mDbmSupported &&
-                (mDimBrightnessReq.get() == true) && (*level == mBrightnessTable[i].mBklStart)) {
-                *level = mDimBrightness;
-            }
-            return NO_ERROR;
-        }
+    BrightnessMode bm = BrightnessMode::BM_MAX;
+    std::optional<float> nits_value = mBrightnessTable->BrightnessToNits(brightness, bm);
+    if (!nits_value) {
+        return -EINVAL;
+    }
+    if (ghbm) {
+        *ghbm = (bm == BrightnessMode::BM_HBM);
+    }
+    std::optional<uint32_t> dbv_value = mBrightnessTable->NitsToDbv(bm, nits_value.value());
+    if (!dbv_value) {
+        return -EINVAL;
     }
 
-    return -EINVAL;
+    if (level) {
+        if ((bm == BrightnessMode::BM_NOMINAL) && mDbmSupported &&
+            (mDimBrightnessReq.get() == true) &&
+            (dbv_value == normal_range.value().get().dbv_min)) {
+            *level = mDimBrightness;
+        } else {
+            *level = dbv_value.value();
+        }
+    }
+    if (nits) {
+        *nits = nits_value.value();
+    }
+
+    return NO_ERROR;
 }
 
 // Return immediately if it's already in the status. Otherwise poll the status
@@ -909,8 +1129,11 @@ void BrightnessController::parseHbmModeEnums(const DrmProperty& property) {
  *   Historian team before modifying (b/239640926).
  */
 void BrightnessController::printBrightnessStates(const char* path) {
-    ALOGI("path=%s, id=%d, level=%d, DimmingOn=%d, Hbm=%d, LhbmOn=%d", path ?: "unknown",
-          mPanelIndex, mBrightnessLevel.get(), mDimming.get(), mGhbm.get(), mLhbm.get());
+    ALOGI("path=%s, id=%d, level=%d, nits=%f, brightness=%f, DimmingOn=%d, Hbm=%d, LhbmOn=%d, "
+          "OpRate=%d",
+          path ?: "unknown", mPanelIndex, mBrightnessLevel.get(), mDisplayWhitePointNits,
+          mBrightnessFloatReq.get(), mDimming.get(), mGhbm.get(), mLhbm.get(),
+          mOperationRate.get());
 }
 
 void BrightnessController::dump(String8& result) {
@@ -937,6 +1160,10 @@ void BrightnessController::dump(String8& result) {
                         mPrevDisplayWhitePointNits);
     result.appendFormat("\tcabc supported %d, cabcMode %d\n", mCabcModeOfs.is_open(),
                         mCabcMode.get());
+    result.appendFormat("\tignore brightness update request %d\n", mIgnoreBrightnessUpdateRequests);
+    result.appendFormat("\tacl mode supported %d, acl mode %d\n", mAclModeOfs.is_open(),
+                        mAclMode.get());
+    result.appendFormat("\toperation rate %d\n", mOperationRate.get());
 
     result.appendFormat("\n");
 }

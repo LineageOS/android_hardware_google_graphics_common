@@ -45,11 +45,12 @@ class Worker {
     return initialized_;
   }
 
+  int InitWorker();
+
  protected:
   Worker(const char *name, int priority, bool is_rt = false);
   virtual ~Worker();
 
-  int InitWorker();
   virtual void Routine() = 0;
 
   /*

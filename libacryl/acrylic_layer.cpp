@@ -521,6 +521,7 @@ void AcrylicLayer::importLayer(AcrylicLayer &other, bool inherit_transform)
         attr |= ATTR_PROTECTED;
     if (other.isCompressed())
         attr |= ATTR_COMPRESSED;
+    if (other.isCompressedWideblk()) attr |= ATTR_COMPRESSED_WIDEBLK;
 
     if (other.getBufferType() == MT_DMABUF) {
         int fd[3];

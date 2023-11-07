@@ -116,7 +116,7 @@ public:
     int setInBuf2(char **pcBuf, int *iSize);
     int setThumbnailSize(int w, int h);
     int setThumbnailQuality(int quality);
-    int setThumbnailPadding(unsigned char *padding, unsigned int num_planes);
+    int setThumbnailPadding(const unsigned char *padding, unsigned int num_planes);
 
     void setExtScalerNum(int csc_hwscaler_id) { m_iHWScalerID = csc_hwscaler_id; }
 

@@ -99,15 +99,17 @@ typedef enum {
     TDM_ATTR_MAX,
 } tdm_attr_t;
 
-const std::unordered_map<tdm_attr_t, String8> HWAttrs = {
-    {TDM_ATTR_SRAM_AMOUNT, String8("SRAM")},
-    {TDM_ATTR_AFBC,        String8("AFBC")},
-    {TDM_ATTR_SBWC,        String8("SBWC")},
-    {TDM_ATTR_ITP,         String8("CSC")}, // CSC //
-    {TDM_ATTR_ROT_90,      String8("ROT")},
-    {TDM_ATTR_SCALE,       String8("SCALE")},
-    {TDM_ATTR_WCG,         String8("WCG")},
-};
+typedef enum {
+    LS_DPUF,
+    LS_DPUF_AXI
+} LoadSharing_t;
+
+typedef struct {
+    String8 name;
+    LoadSharing_t loadSharing;
+} TDMInfo_t;
+
+extern std::unordered_map<tdm_attr_t, TDMInfo_t> HWAttrs;
 
 typedef struct feature_support_t {
     mpp_phycal_type_t hwType; /* MPP_DPP_VG, MPP_DPP_VGFS, ... */

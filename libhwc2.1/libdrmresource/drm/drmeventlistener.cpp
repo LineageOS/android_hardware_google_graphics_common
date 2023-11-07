@@ -101,7 +101,7 @@ int DrmEventListener::Init() {
     return -errno;
   }
 
-  return InitWorker();
+  return 0;
 }
 
 void DrmEventListener::RegisterHotplugHandler(DrmEventHandler *handler) {

@@ -84,11 +84,15 @@ static std::string loadPanelGammaCalibration(const std::string &file) {
 ExynosPrimaryDisplay::ExynosPrimaryDisplay(uint32_t index, ExynosDevice *device,
                                            const std::string &displayName)
       : ExynosDisplay(HWC_DISPLAY_PRIMARY, index, device, displayName),
+        mUseBlockingZoneForMinIdleRefreshRate(false),
         mMinIdleRefreshRate(0),
+        mVrrThrottleFps{0},
+        mVrrThrottleNanos{0},
         mRefreshRateDelayNanos(0),
         mLastRefreshRateAppliedNanos(0),
         mAppliedActiveConfig(0),
         mDisplayIdleTimerEnabled(false),
+        mDisplayIdleTimerNanos{0},
         mDisplayNeedHandleIdleExit(false) {
     // TODO : Hard coded here
     mNumMaxPriorityAllowed = 5;
@@ -96,6 +100,21 @@ ExynosPrimaryDisplay::ExynosPrimaryDisplay(uint32_t index, ExynosDevice *device,
     /* Initialization */
     mFramesToReachLhbmPeakBrightness =
             property_get_int32("vendor.primarydisplay.lhbm.frames_to_reach_peak_brightness", 3);
+
+    /* TODO(b/274705046): use drm properties instead of system properties */
+    mDefaultMinIdleRefreshRate =
+            property_get_int32("vendor.primarydisplay.min_idle_refresh_rate.default", 0);
+    mMinIdleRefreshRateForBlockingZone =
+            property_get_int32("vendor.primarydisplay.min_idle_refresh_rate.blocking_zone", 0);
+    mDbvThresholdForBlockingZone =
+            property_get_int32("vendor.primarydisplay.min_idle_refresh_rate.blocking_zone_dbv", 0);
+    if (mDefaultMinIdleRefreshRate && mMinIdleRefreshRateForBlockingZone &&
+        mDbvThresholdForBlockingZone) {
+        mUseBlockingZoneForMinIdleRefreshRate = true;
+        ALOGI("%s min_default=%d min_blocking_zone=%d dbv_blocking_zone=%d", __func__,
+              mDefaultMinIdleRefreshRate, mMinIdleRefreshRateForBlockingZone,
+              mDbvThresholdForBlockingZone);
+    }
 
     // Allow to enable dynamic recomposition after every power on
     // since it will always be disabled for every power off
@@ -403,10 +422,19 @@ int32_t ExynosPrimaryDisplay::setPowerMode(int32_t mode) {
     else
         mDREnable = mDRDefault;
 
-    if (mOperationRateManager) mOperationRateManager->onPowerMode(mode);
+    if (mOperationRateManager) {
+        mOperationRateManager->onPowerMode(mode);
+        mBrightnessController->processOperationRate(
+                mOperationRateManager->getTargetOperationRate());
+    }
+
     switch (mode) {
-        case HWC2_POWER_MODE_DOZE_SUSPEND:
         case HWC2_POWER_MODE_DOZE:
+        case HWC2_POWER_MODE_DOZE_SUSPEND:
+            if (mode == HWC2_POWER_MODE_DOZE && mDisplayInterface->needRefreshOnLP()) {
+                ALOGI("Refresh before setting power doze.");
+                mDevice->onRefresh(mDisplayId);
+            }
             return setPowerDoze(static_cast<hwc2_power_mode_t>(mode));
         case HWC2_POWER_MODE_OFF:
             setPowerOff();
@@ -642,10 +670,6 @@ int32_t ExynosPrimaryDisplay::setLhbmState(bool enabled) {
     std::vector<std::string> checkingValue;
     if (!enabled) {
         ATRACE_NAME("disable_lhbm");
-        {
-            Mutex::Autolock lock(mDisplayMutex);
-            restoreLhbmDisplayConfigLocked();
-        }
         requestLhbm(false);
         {
             ATRACE_NAME("wait_for_lhbm_off_cmd");
@@ -656,6 +680,10 @@ int32_t ExynosPrimaryDisplay::setLhbmState(bool enabled) {
             if (ret != OK) {
                 DISPLAY_LOGW("%s: failed to send lhbm-off cmd", __func__);
             }
+        }
+        {
+            Mutex::Autolock lock(mDisplayMutex);
+            restoreLhbmDisplayConfigLocked();
         }
         setLHBMRefreshRateThrottle(0);
         mLhbmOn = false;
@@ -960,37 +988,58 @@ void ExynosPrimaryDisplay::handleDisplayIdleEnter(const uint32_t idleTeRefreshRa
     setDisplayNeedHandleIdleExit(needed, false);
 }
 
-int ExynosPrimaryDisplay::setMinIdleRefreshRate(const int fps) {
-    mMinIdleRefreshRate = fps;
+int ExynosPrimaryDisplay::setMinIdleRefreshRate(const int targetFps,
+                                                const VrrThrottleRequester requester) {
+    int fps = (targetFps <= 0) ? mDefaultMinIdleRefreshRate : targetFps;
+    if (requester == VrrThrottleRequester::BRIGHTNESS && mUseBlockingZoneForMinIdleRefreshRate) {
+        uint32_t level = mBrightnessController->getBrightnessLevel();
+        fps = (level < mDbvThresholdForBlockingZone) ? mMinIdleRefreshRateForBlockingZone
+                                                     : mDefaultMinIdleRefreshRate;
+    }
+
+    std::lock_guard<std::mutex> lock(mMinIdleRefreshRateMutex);
+    if (fps == mVrrThrottleFps[toUnderlying(requester)]) return NO_ERROR;
+
+    ALOGD("%s requester %u, fps %d", __func__, toUnderlying(requester), fps);
+    mVrrThrottleFps[toUnderlying(requester)] = fps;
+    int maxMinIdleFps = 0;
+    for (uint32_t i = 0; i < toUnderlying(VrrThrottleRequester::MAX); i++) {
+        if (mVrrThrottleFps[i] > maxMinIdleFps) {
+            maxMinIdleFps = mVrrThrottleFps[i];
+        }
+    }
+    if (maxMinIdleFps == mMinIdleRefreshRate) return NO_ERROR;
 
     const std::string path = getPanelSysfsPath(getDisplayTypeFromIndex(mIndex)) + "min_vrefresh";
     std::ofstream ofs(path);
     if (!ofs.is_open()) {
-        ALOGW("Unable to open node '%s', error = %s", path.c_str(), strerror(errno));
+        ALOGW("%s Unable to open node '%s', error = %s", __func__, path.c_str(), strerror(errno));
         return errno;
     } else {
-        ofs << mMinIdleRefreshRate;
+        ofs << maxMinIdleFps;
         ofs.close();
         ALOGI("ExynosPrimaryDisplay::%s() writes min_vrefresh(%d) to the sysfs node", __func__,
-              fps);
+              maxMinIdleFps);
     }
+    mMinIdleRefreshRate = maxMinIdleFps;
     return NO_ERROR;
 }
 
 int ExynosPrimaryDisplay::setRefreshRateThrottleNanos(const int64_t delayNanos,
                                                       const VrrThrottleRequester requester) {
     ATRACE_CALL();
-    ALOGI("%s() requester(%u) set delay to %" PRId64 "ns", __func__, toUnderlying(requester),
-          delayNanos);
     if (delayNanos < 0) {
         ALOGW("%s() set invalid delay(%" PRId64 ")", __func__, delayNanos);
         return BAD_VALUE;
     }
 
     std::lock_guard<std::mutex> lock(mIdleRefreshRateThrottleMutex);
+    if (delayNanos == mVrrThrottleNanos[toUnderlying(requester)]) return NO_ERROR;
 
-    int64_t maxDelayNanos = 0;
+    ALOGI("%s() requester(%u) set delay to %" PRId64 "ns", __func__, toUnderlying(requester),
+          delayNanos);
     mVrrThrottleNanos[toUnderlying(requester)] = delayNanos;
+    int64_t maxDelayNanos = 0;
     for (uint32_t i = 0; i < toUnderlying(VrrThrottleRequester::MAX); i++) {
         if (mVrrThrottleNanos[i] > maxDelayNanos) {
             maxDelayNanos = mVrrThrottleNanos[i];
@@ -1013,13 +1062,23 @@ void ExynosPrimaryDisplay::dump(String8 &result) {
     for (uint32_t i = 0; i < toUnderlying(DispIdleTimerRequester::MAX); i++) {
         result.appendFormat("\t[%u] vote to %" PRId64 " ns\n", i, mDisplayIdleTimerNanos[i]);
     }
-    result.appendFormat("Min idle refresh rate: %d\n", mMinIdleRefreshRate);
+
+    result.appendFormat("Min idle refresh rate: %d, default: %d", mMinIdleRefreshRate,
+                        mDefaultMinIdleRefreshRate);
+    if (mUseBlockingZoneForMinIdleRefreshRate) {
+        result.appendFormat(", blocking zone level: %d, min refresh rate: %d\n",
+                            mDbvThresholdForBlockingZone, mMinIdleRefreshRateForBlockingZone);
+    } else {
+        result.appendFormat("\n");
+    }
+
+    for (uint32_t i = 0; i < toUnderlying(VrrThrottleRequester::MAX); i++) {
+        result.appendFormat("\t[%u] vote to %d hz\n", i, mVrrThrottleFps[i]);
+    }
+
     result.appendFormat("Refresh rate delay: %" PRId64 " ns\n", mRefreshRateDelayNanos);
     for (uint32_t i = 0; i < toUnderlying(VrrThrottleRequester::MAX); i++) {
         result.appendFormat("\t[%u] vote to %" PRId64 " ns\n", i, mVrrThrottleNanos[i]);
-    }
-    if (mOperationRateManager) {
-        result.appendFormat("Operation rate: %d\n", mOperationRateManager->getOperationRate());
     }
     result.appendFormat("\n");
 }

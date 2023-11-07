@@ -232,6 +232,8 @@ void ExynosDevice::initDeviceInterface(uint32_t interfaceType)
             i++;
         }
     }
+
+    mDeviceInterface->postInit();
 }
 
 ExynosDevice::~ExynosDevice() {
@@ -1218,6 +1220,22 @@ void ExynosDevice::onVsyncIdle(hwc2_display_t displayId) {
             reinterpret_cast<void (*)(hwc2_callback_data_t callbackData,
                                       hwc2_display_t hwcDisplay)>(callbackInfo.funcPointer);
     callbackFunc(callbackInfo.callbackData, displayId);
+}
+
+void ExynosDevice::handleHotplug() {
+    bool hpdStatus = false;
+
+    for (size_t i = 0; i < mDisplays.size(); i++) {
+        if (mDisplays[i] == nullptr) {
+            continue;
+        }
+
+        if (mDisplays[i]->checkHotplugEventUpdated(hpdStatus)) {
+            mDisplays[i]->handleHotplugEvent(hpdStatus);
+            mDisplays[i]->hotplug();
+            mDisplays[i]->invalidate();
+        }
+    }
 }
 
 void ExynosDevice::onRefreshRateChangedDebug(hwc2_display_t displayId, uint32_t vsyncPeriod) {

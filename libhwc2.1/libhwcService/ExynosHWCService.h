@@ -70,6 +70,8 @@ public:
     virtual int32_t setDisplayDeviceMode(int32_t display_id, int32_t mode);
     virtual int32_t setPanelGammaTableSource(int32_t display_id, int32_t type, int32_t source);
     virtual int32_t setDisplayBrightness(int32_t display_id, float brightness);
+    virtual int32_t ignoreDisplayBrightnessUpdateRequests(int32_t displayId, bool ignore);
+    virtual int32_t setDisplayBrightnessNits(const int32_t display_id, const float nits);
     virtual int32_t setDisplayLhbm(int32_t display_id, uint32_t on);
 
     virtual int32_t setMinIdleRefreshRate(uint32_t display_id, int32_t fps);

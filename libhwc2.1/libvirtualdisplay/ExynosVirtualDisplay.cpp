@@ -220,7 +220,7 @@ int32_t ExynosVirtualDisplay::validateDisplay(
 
     initPerFrameData();
 
-    mClientCompositionInfo.setCompressed(false);
+    mClientCompositionInfo.setCompressionType(COMP_TYPE_NONE);
 
     if (mNeedReloadResourceForHWFC) {
         ALOGI("validateDisplay() mIsWFDState %d", mIsWFDState);

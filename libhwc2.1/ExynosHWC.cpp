@@ -1294,8 +1294,11 @@ void exynos_boot_finished(ExynosHWCCtx *dev)
         if (read(sw_fd, &val, 1) == 1 && val == '1') {
             ALOGI("%s : try to reconnect displayport", __func__);
             ExynosExternalDisplayModule *display = (ExynosExternalDisplayModule*)dev->device->getDisplay(getDisplayId(HWC_DISPLAY_EXTERNAL, 0));
-            if (display != nullptr)
-                display->handleHotplugEvent();
+            if (display != nullptr) {
+                bool hpdStatus = false;
+                display->checkHotplugEventUpdated(hpdStatus);
+                display->handleHotplugEvent(hpdStatus);
+            }
         }
         hwcFdClose(sw_fd);
     }
