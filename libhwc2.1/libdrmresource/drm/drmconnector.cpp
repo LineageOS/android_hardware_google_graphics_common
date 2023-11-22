@@ -160,6 +160,16 @@ int DrmConnector::Init() {
     ALOGE("Could not get vrr_switch_duration property\n");
   }
 
+  ret = drm_->GetConnectorProperty(*this, "operation_rate", &operation_rate_);
+  if (ret) {
+    ALOGE("Could not get operation_rate property\n");
+  }
+
+  ret = drm_->GetConnectorProperty(*this, "refresh_on_lp", &refresh_on_lp_);
+  if (ret) {
+    ALOGE("Could not get refresh_on_lp property\n");
+  }
+
   properties_.push_back(&dpms_property_);
   properties_.push_back(&crtc_id_property_);
   properties_.push_back(&edid_property_);
@@ -182,6 +192,8 @@ int DrmConnector::Init() {
   properties_.push_back(&mipi_sync_);
   properties_.push_back(&panel_idle_support_);
   properties_.push_back(&vrr_switch_duration_);
+  properties_.push_back(&operation_rate_);
+  properties_.push_back(&refresh_on_lp_);
 
   return 0;
 }
@@ -240,12 +252,26 @@ std::string DrmConnector::name() const {
 }
 
 int DrmConnector::UpdateModes() {
+  std::lock_guard<std::recursive_mutex> lock(modes_lock_);
+
   int fd = drm_->fd();
 
   drmModeConnectorPtr c = drmModeGetConnector(fd, id_);
   if (!c) {
     ALOGE("Failed to get connector %d", id_);
     return -ENODEV;
+  }
+
+  if (state_ == DRM_MODE_CONNECTED &&
+      c->connection == DRM_MODE_CONNECTED && modes_.size() > 0) {
+    // no need to update modes
+    return 0;
+  }
+
+  if (state_ == DRM_MODE_DISCONNECTED &&
+      c->connection == DRM_MODE_DISCONNECTED && modes_.size() == 0) {
+    // no need to update modes
+    return 0;
   }
 
   state_ = c->connection;
@@ -262,10 +288,10 @@ int DrmConnector::UpdateModes() {
       }
     }
     if (!exists) {
-    DrmMode m(&c->modes[i]);
-    m.set_id(drm_->next_mode_id());
-    new_modes.push_back(m);
-  }
+      DrmMode m(&c->modes[i]);
+      m.set_id(drm_->next_mode_id());
+      new_modes.push_back(m);
+    }
     // Use only the first DRM_MODE_TYPE_PREFERRED mode found
     if (!preferred_mode_found &&
         (new_modes.back().type() & DRM_MODE_TYPE_PREFERRED)) {
@@ -277,7 +303,11 @@ int DrmConnector::UpdateModes() {
   if (!preferred_mode_found && modes_.size() != 0) {
     preferred_mode_id_ = modes_[0].id();
   }
-  return 0;
+  return 1;
+}
+
+int DrmConnector::UpdateEdidProperty() {
+  return drm_->UpdateConnectorProperty(*this, &edid_property_);
 }
 
 const DrmMode &DrmConnector::active_mode() const {
@@ -358,6 +388,14 @@ const DrmProperty &DrmConnector::orientation() const {
 
 const DrmMode &DrmConnector::lp_mode() const {
     return lp_mode_;
+}
+
+const DrmProperty &DrmConnector::operation_rate() const {
+    return operation_rate_;
+}
+
+const DrmProperty &DrmConnector::refresh_on_lp() const {
+    return refresh_on_lp_;
 }
 
 int DrmConnector::UpdateLpMode() {

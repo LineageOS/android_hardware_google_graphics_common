@@ -48,7 +48,6 @@ ExynosExternalDisplay::ExynosExternalDisplay(uint32_t index, ExynosDevice* devic
     mSkipStartFrame = 0;
     mSkipFrameCount = -1;
     mIsSkipFrame = false;
-    mActiveConfigIndex = 0;
     mVirtualDisplayState = 0;
 
     //TODO : Hard coded currently
@@ -76,11 +75,9 @@ int ExynosExternalDisplay::openExternalDisplay()
     DISPLAY_LOGD(eDebugExternalDisplay, "");
 
     int ret = 0;
-    setVsyncEnabledInternal(HWC2_VSYNC_ENABLE);
 
     mSkipFrameCount = SKIP_FRAME_COUNT;
     mSkipStartFrame = 0;
-    mActiveConfigIndex = 0;
     mPlugState = true;
 
     if (mLayers.size() != 0) {
@@ -121,15 +118,58 @@ void ExynosExternalDisplay::closeExternalDisplay()
         layer->mReleaseFence = -1;
         layer->mLayerBuffer = NULL;
     }
+
+    mClientCompositionInfo.initializeInfosComplete(this);
+    mExynosCompositionInfo.initializeInfosComplete(this);
 }
 
 int ExynosExternalDisplay::getDisplayConfigs(uint32_t* outNumConfigs, hwc2_config_t* outConfigs)
 {
     DISPLAY_LOGD(eDebugExternalDisplay, "");
 
-    if (!mHpdStatus)
-        return -1;
-    return mDisplayInterface->getDisplayConfigs(outNumConfigs, outConfigs);
+    int32_t ret = mDisplayInterface->getDisplayConfigs(outNumConfigs, outConfigs);
+    if (ret)
+        DISPLAY_LOGE("%s: failed to getDisplayConfigs, ret(%d)", __func__, ret);
+
+    if (outConfigs) {
+        char modeStr[PROPERTY_VALUE_MAX] = "\0";
+        int32_t width, height, fps, config;
+        int32_t err = HWC2_ERROR_BAD_CONFIG;
+
+        if (property_get("vendor.display.external.preferred_mode", modeStr, "") > 0) {
+            if (sscanf(modeStr, "%dx%d@%d", &width, &height, &fps) == 3) {
+                err = lookupDisplayConfigs(width, height, fps, &config);
+                if (err != HWC2_ERROR_NONE) {
+                    DISPLAY_LOGW("%s: display does not support preferred mode %dx%d@%d",
+                                 __func__, width, height, fps);
+                }
+            } else {
+                DISPLAY_LOGW("%s: vendor.display.external.preferred_mode: bad format",
+                             __func__);
+            }
+        }
+
+        if (err == HWC2_ERROR_NONE) {
+            mActiveConfig = config;
+        } else {
+            mActiveConfig = outConfigs[0];
+        }
+
+        displayConfigs_t displayConfig = mDisplayConfigs[mActiveConfig];
+        mXres = displayConfig.width;
+        mYres = displayConfig.height;
+        mVsyncPeriod = displayConfig.vsyncPeriod;
+
+        if (mDisplayInterface->mType == INTERFACE_TYPE_DRM) {
+            ret = mDisplayInterface->setActiveConfig(mActiveConfig);
+            if (ret) {
+                DISPLAY_LOGE("%s: failed to setActiveConfigs, ret(%d)", __func__, ret);
+                return ret;
+            }
+        }
+    }
+
+    return ret;
 }
 
 int32_t ExynosExternalDisplay::getActiveConfig(hwc2_config_t* outConfig) {
@@ -138,15 +178,9 @@ int32_t ExynosExternalDisplay::getActiveConfig(hwc2_config_t* outConfig) {
     if (!mHpdStatus)
         return -1;
 
-    *outConfig = mActiveConfigIndex;
+    *outConfig = mActiveConfig;
 
     return HWC2_ERROR_NONE;
-}
-
-void ExynosExternalDisplay::hotplug(){
-    DISPLAY_LOGD(eDebugExternalDisplay, "");
-
-    mDevice->onHotPlug(mDisplayId, mHpdStatus);
 }
 
 bool ExynosExternalDisplay::handleRotate()
@@ -245,15 +279,18 @@ int32_t ExynosExternalDisplay::validateDisplay(
     if (mSkipStartFrame < SKIP_EXTERNAL_FRAME) {
         initDisplay();
         mRenderingState = RENDERING_STATE_VALIDATED;
+        uint32_t changed_count = 0;
         for (size_t i = 0; i < mLayers.size(); i++) {
             ExynosLayer *layer = mLayers[i];
             if (layer && (layer->mValidateCompositionType == HWC2_COMPOSITION_DEVICE ||
                 layer->mValidateCompositionType == HWC2_COMPOSITION_EXYNOS)) {
                 layer->mValidateCompositionType = HWC2_COMPOSITION_CLIENT;
                 layer->mReleaseFence = layer->mAcquireFence;
+                changed_count++;
             }
         }
         mSkipStartFrame++;
+        *outNumTypes += changed_count;
 
         ALOGI("[ExternalDisplay] %s : Skip start frame [%d/%d]", __func__, mSkipStartFrame, SKIP_EXTERNAL_FRAME);
     }
@@ -396,12 +433,13 @@ int ExynosExternalDisplay::enable()
     if (openExternalDisplay() < 0)
         return HWC2_ERROR_UNSUPPORTED;
 
-    if (mDisplayInterface->setPowerMode(HWC_POWER_MODE_NORMAL) < 0){
+    if (mDisplayInterface->setPowerMode(HWC_POWER_MODE_NORMAL) < 0) {
         DISPLAY_LOGE("set powermode ioctl failed errno : %d", errno);
         return HWC2_ERROR_UNSUPPORTED;
     }
 
     mEnabled = true;
+    mPowerModeState = (hwc2_power_mode_t)HWC_POWER_MODE_NORMAL;
 
     ALOGI("[ExternalDisplay] %s -", __func__);
 
@@ -415,17 +453,23 @@ int ExynosExternalDisplay::disable()
     if (!mEnabled)
         return HWC2_ERROR_NONE;
 
+    if (mHpdStatus) {
+        clearDisplay(false);
+        return HWC2_ERROR_NONE;
+    }
+
     if (mSkipStartFrame > (SKIP_EXTERNAL_FRAME - 1)) {
         clearDisplay(true);
     } else {
         ALOGI("Skip clearDisplay to avoid resource conflict");
     }
 
-    if (mDisplayInterface->setPowerMode(HWC_POWER_MODE_OFF) < 0){
+    if (mDisplayInterface->setPowerMode(HWC_POWER_MODE_OFF) < 0) {
         DISPLAY_LOGE("set powermode ioctl failed errno : %d", errno);
         return HWC2_ERROR_UNSUPPORTED;
     }
 
+    mEnabled = false;
     mPowerModeState = (hwc2_power_mode_t)HWC_POWER_MODE_OFF;
 
     ALOGI("[ExternalDisplay] %s -", __func__);
@@ -446,9 +490,12 @@ int32_t ExynosExternalDisplay::setPowerMode(
         if (mode == HWC_POWER_MODE_OFF) {
             fb_blank = FB_BLANK_POWERDOWN;
             err = disable();
-        } else {
+        } else if (mode == HWC_POWER_MODE_NORMAL) {
             fb_blank = FB_BLANK_UNBLANK;
             err = enable();
+        } else {
+            DISPLAY_LOGE("unsupported powermode: %d", mode);
+            return HWC2_ERROR_UNSUPPORTED;
         }
 
         if (err != 0) {
@@ -463,8 +510,6 @@ int32_t ExynosExternalDisplay::setPowerMode(
 
         // check the dynamic recomposition thread by following display power status
         mDevice->checkDynamicRecompositionThread();
-
-        mPowerModeState = (hwc2_power_mode_t)mode;
 
         DISPLAY_LOGD(eDebugExternalDisplay, "%s:: mode(%d), blank(%d)", __func__, mode, fb_blank);
 
@@ -502,51 +547,23 @@ bool ExynosExternalDisplay::getHDRException(ExynosLayer* __unused layer)
     return ret;
 }
 
-void ExynosExternalDisplay::handleHotplugEvent()
+void ExynosExternalDisplay::handleHotplugEvent(bool hpdStatus)
 {
-    bool hpd_temp = 0;
+    Mutex::Autolock lock(mDisplayMutex);
 
-    if (!mDevice->isCallbackAvailable(HWC2_CALLBACK_HOTPLUG)) return;
-
-    char cablestate_name[MAX_DEV_NAME + 1];
-    cablestate_name[MAX_DEV_NAME] = '\0';
-    sprintf(cablestate_name, DP_CABLE_STATE_NAME, DP_LINK_NAME);
-
-    int sw_fd = open(cablestate_name, O_RDONLY);
-    char val;
-
-    if (sw_fd >= 0) {
-        if (read(sw_fd, &val, 1) == 1) {
-            if (val == '1')
-                hpd_temp = true;
-            else if (val == '0')
-                hpd_temp = false;
+    mHpdStatus = hpdStatus;
+    if (mHpdStatus) {
+        if (openExternalDisplay() < 0) {
+            ALOGE("Failed to openExternalDisplay");
+            mHpdStatus = false;
+            return;
         }
-        hwcFdClose(sw_fd);
+    } else {
+        disable();
+        closeExternalDisplay();
     }
 
-    {
-        Mutex::Autolock lock(mExternalMutex);
-        {
-            Mutex::Autolock lock(mDisplayMutex);
-            mHpdStatus = hpd_temp;
-            if (mHpdStatus) {
-                if (openExternalDisplay() < 0) {
-                    ALOGE("Failed to openExternalDisplay");
-                    mHpdStatus = false;
-                    return;
-                }
-            }
-            else {
-                disable();
-                closeExternalDisplay();
-            }
-            hotplug();
-            mDevice->onRefresh(mDisplayId);
-        }
-    }
-
-    ALOGI("HPD status changed to %s", mHpdStatus ? "enabled" : "disabled");
+    ALOGI("HPD status changed to %s, mDisplayId %d, mDisplayFd %d", mHpdStatus ? "enabled" : "disabled", mDisplayId, mDisplayInterface->getDisplayFd());
 }
 
 void ExynosExternalDisplay::initDisplayInterface(uint32_t interfaceType)

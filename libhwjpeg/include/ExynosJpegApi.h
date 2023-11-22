@@ -176,7 +176,7 @@ public:
     }
 
     int setQuality(const unsigned char q_table[]);
-    int setPadding(unsigned char *padding, unsigned int num_planes);
+    int setPadding(const unsigned char *padding, unsigned int num_planes);
 
     int setColorBufSize(int *piBufSize, int iSize);
     int getJpegSize(void) { return m_nStreamSize; }

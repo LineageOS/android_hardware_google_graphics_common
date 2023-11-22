@@ -82,6 +82,7 @@ class ExynosDeviceInterface {
     public:
         virtual ~ExynosDeviceInterface(){};
         virtual void init(ExynosDevice *exynosDevice) = 0;
+        virtual void postInit() = 0;
         virtual int32_t initDisplayInterface(
                 std::unique_ptr<ExynosDisplayInterface> __unused &dispInterface) {
             return 0;

@@ -134,16 +134,9 @@ unsigned int isNarrowRgb(int format, android_dataspace data_space)
 const format_description_t* halFormatToExynosFormat(int inHalFormat, uint32_t inCompressType) {
     for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++) {
         const int descHalFormat = exynos_format_desc[i].halFormat;
-        uint32_t descCompressType = exynos_format_desc[i].getCompression();
-
-        // TODO: b/175381083, Skip checking SBWC compression type
-        if (descCompressType == SBWC || descCompressType == SBWC_LOSSY) {
-            descCompressType = COMP_ANY;
-        }
 
         if ((inHalFormat == descHalFormat) &&
-            ((inCompressType == COMP_ANY) || (descCompressType == COMP_ANY) ||
-             (inCompressType == descCompressType))) {
+            exynos_format_desc[i].isCompressionSupported(inCompressType)) {
             return &exynos_format_desc[i];
         }
     }
@@ -195,8 +188,7 @@ bool isFormatSBWC(int format)
 {
     for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++){
         if (exynos_format_desc[i].halFormat == format) {
-            if ((exynos_format_desc[i].type & SBWC) ||
-                    (exynos_format_desc[i].type & SBWC_LOSSY))
+            if (exynos_format_desc[i].type & COMP_TYPE_SBWC)
                 return true;
             else
                 return false;
@@ -303,9 +295,10 @@ bool isFormatYCrCb(int format)
 
 bool isFormatLossy(int format)
 {
-    for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++){
+    for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++) {
         if (exynos_format_desc[i].halFormat == format) {
-            if (exynos_format_desc[i].type & SBWC_LOSSY)
+            uint32_t sbwcType = exynos_format_desc[i].type & FORMAT_SBWC_MASK;
+            if (sbwcType && sbwcType != SBWC_LOSSLESS)
                 return true;
             else
                 return false;
@@ -316,7 +309,7 @@ bool isFormatLossy(int format)
 
 bool formatHasAlphaChannel(int format)
 {
-    for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++){
+    for (unsigned int i = 0; i < FORMAT_MAX_CNT; i++) {
         if (exynos_format_desc[i].halFormat == format) {
             return exynos_format_desc[i].hasAlpha;
         }
@@ -332,13 +325,82 @@ bool isAFBCCompressed(const buffer_handle_t handle) {
     return false;
 }
 
-uint32_t getCompressionType(const buffer_handle_t handle) {
-    if (isAFBCCompressed(handle)) {
-        return AFBC;
+bool isSBWCCompressed(const buffer_handle_t handle) {
+    if (handle != NULL) {
+        return VendorGraphicBufferMeta::is_sbwc(handle);
     }
 
-    // TODO: b/175381083, Add SBWC check here or make a function in gralloc
+    return false;
+}
+
+uint32_t getFormat(const buffer_handle_t handle) {
+    if (handle != NULL) {
+        return VendorGraphicBufferMeta::get_format(handle);
+    }
+
     return 0;
+}
+
+uint64_t getFormatModifier(const buffer_handle_t handle) {
+    if (handle != NULL) {
+        return VendorGraphicBufferMeta::get_format_modifier(handle);
+    }
+
+    return 0;
+}
+
+uint32_t getCompressionType(const buffer_handle_t handle) {
+    if (handle == NULL) return COMP_TYPE_NONE;
+
+    if (isAFBCCompressed(handle)) {
+        return COMP_TYPE_AFBC;
+    } else if (isSBWCCompressed(handle)) {
+        return COMP_TYPE_SBWC;
+    }
+
+    return COMP_TYPE_NONE;
+}
+
+CompressionInfo getCompressionInfo(buffer_handle_t handle) {
+    CompressionInfo compressionInfo = {COMP_TYPE_NONE, 0};
+
+    if (handle == NULL) return compressionInfo;
+
+    if (isAFBCCompressed(handle)) {
+        compressionInfo.type = COMP_TYPE_AFBC;
+        compressionInfo.modifier = getFormatModifier(handle);
+    } else if (isSBWCCompressed(handle)) {
+        compressionInfo.type = COMP_TYPE_SBWC;
+
+        uint32_t format = getFormat(handle);
+        if (isFormat10BitYUV420(format))
+            compressionInfo.modifier = SBWC_FORMAT_MOD_BLOCK_SIZE_32x5;
+        else
+            compressionInfo.modifier = SBWC_FORMAT_MOD_BLOCK_SIZE_32x4;
+    } else {
+        compressionInfo.type = COMP_TYPE_NONE;
+    }
+
+    return compressionInfo;
+}
+
+String8 getCompressionStr(CompressionInfo compression) {
+    String8 result;
+    if (compression.type == COMP_TYPE_NONE)
+        result.append("None");
+    else if (compression.type == COMP_TYPE_AFBC)
+        result.appendFormat("AFBC(mod:0x%" PRIx64 ")", compression.modifier);
+    else if (compression.type == COMP_TYPE_SBWC)
+        result.appendFormat("SBWC(mod:0x%" PRIx64 ")", compression.modifier);
+    else
+        result.append("Unknown");
+    return result;
+}
+
+bool isAFBC32x8(CompressionInfo compression) {
+    return (compression.type == COMP_TYPE_AFBC) &&
+            ((compression.modifier & AFBC_FORMAT_MOD_BLOCK_SIZE_MASK) ==
+             AFBC_FORMAT_MOD_BLOCK_SIZE_32x8);
 }
 
 uint32_t halDataSpaceToV4L2ColorSpace(android_dataspace data_space)
@@ -497,11 +559,12 @@ void dumpExynosImage(String8& result, exynos_image &img)
     result.appendFormat("\tbufferHandle: %p, fullWidth: %d, fullHeight: %d, x: %d, y: %d, w: %d, "
                         "h: %d, format: %s\n",
                         img.bufferHandle, img.fullWidth, img.fullHeight, img.x, img.y, img.w, img.h,
-                        getFormatStr(img.format, img.compressed ? AFBC : 0).string());
+                        getFormatStr(img.format, img.compressionInfo.type).string());
     result.appendFormat("\tusageFlags: 0x%" PRIx64 ", layerFlags: 0x%8x, acquireFenceFd: %d, releaseFenceFd: %d\n",
             img.usageFlags, img.layerFlags, img.acquireFenceFd, img.releaseFenceFd);
-    result.appendFormat("\tdataSpace(%d), blending(%d), transform(0x%2x), afbc(%d)\n",
-                        img.dataSpace, img.blending, img.transform, img.compressed);
+    result.appendFormat("\tdataSpace(%d), blending(%d), transform(0x%2x), compression: %s\n",
+                        img.dataSpace, img.blending, img.transform,
+                        getCompressionStr(img.compressionInfo).string());
     if (img.bufferHandle != NULL) {
         VendorGraphicBufferMeta gmeta(img.bufferHandle);
         result.appendFormat("\tbuffer's stride: %d, %d\n", gmeta.stride, gmeta.vstride);
@@ -650,6 +713,7 @@ void setFenceName(int fenceFd, HwcFenceType fenceType) {
     }
 }
 
+// TODO(b/273890355): remove this function and get buffer size from gralloc
 uint32_t getExynosBufferYLength(uint32_t width, uint32_t height, int format)
 {
     switch (format) {
@@ -671,6 +735,8 @@ uint32_t getExynosBufferYLength(uint32_t width, uint32_t height, int format)
     case HAL_PIXEL_FORMAT_YCBCR_P010:
         HDEBUGLOGD(eDebugMPP, "size(Y) : %d", P010_Y_SIZE(width, height));
         return P010_Y_SIZE(width, height);
+    case MALI_GRALLOC_FORMAT_INTERNAL_P010:
+        return 2 * __ALIGN_UP(width, 32) * __ALIGN_UP(height, 2);
     case HAL_PIXEL_FORMAT_EXYNOS_YCbCr_420_SPN:
         return NV12N_Y_SIZE(width, height);
     case HAL_PIXEL_FORMAT_EXYNOS_YCbCr_P010_SPN:
@@ -706,6 +772,7 @@ uint32_t getExynosBufferYLength(uint32_t width, uint32_t height, int format)
     return NV12M_Y_SIZE(width, height) + ((width % 128) == 0 ? 0 : 256);
 }
 
+// TODO(b/273890355): no one is using this function. It can be removed.
 uint32_t getExynosBufferCbCrLength(uint32_t width, uint32_t height, int format)
 {
     switch (format) {

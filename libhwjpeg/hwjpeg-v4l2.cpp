@@ -71,10 +71,12 @@ CHWJpegV4L2Compressor::~CHWJpegV4L2Compressor() {
 }
 
 int CHWJpegV4L2Compressor::lock() {
+    mutex_.lock();
     return file_lock_.lock();
 }
 
 int CHWJpegV4L2Compressor::unlock() {
+    mutex_.unlock();
     return file_lock_.unlock();
 }
 
@@ -158,7 +160,7 @@ bool CHWJpegV4L2Compressor::SetQuality(const unsigned char qtable[]) {
     return true;
 }
 
-bool CHWJpegV4L2Compressor::SetPadding(unsigned char padding[], unsigned int num_planes) {
+bool CHWJpegV4L2Compressor::SetPadding(const unsigned char padding[], unsigned int num_planes) {
     if (num_planes > 3 || num_planes < 1) {
         ALOGE("Attempting to set padding for incorrect number of buffers");
         return false;
@@ -178,7 +180,7 @@ bool CHWJpegV4L2Compressor::SetPadding(unsigned char padding[], unsigned int num
     return true;
 }
 
-bool CHWJpegV4L2Compressor::SetPadding2(unsigned char padding[], unsigned int num_planes) {
+bool CHWJpegV4L2Compressor::SetPadding2(const unsigned char padding[], unsigned int num_planes) {
     if (!IsDeviceCapability(V4L2_CAP_EXYNOS_JPEG_B2B_COMPRESSION)) {
         ALOGE("Back-to-back compression is not suppored by H/W");
         return false;

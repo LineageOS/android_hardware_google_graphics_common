@@ -66,6 +66,8 @@ enum {
     SET_DISPLAY_DBM = 1009,
     SET_DISPLAY_MULTI_THREADED_PRESENT = 1010,
     TRIGGER_REFRESH_RATE_INDICATOR_UPDATE = 1011,
+    IGNORE_DISPLAY_BRIGHTNESS_UPDATE_REQUESTS = 1012,
+    SET_DISPLAY_BRIGHTNESS_NITS = 1013,
 };
 
 class BpExynosHWCService : public BpInterface<IExynosHWCService> {
@@ -397,6 +399,26 @@ public:
         int result = remote()->transact(SET_DISPLAY_BRIGHTNESS, data, &reply);
         if (result)
             ALOGE("SET_DISPLAY_BRIGHTNESS transact error(%d)", result);
+        return result;
+    }
+
+    virtual int32_t ignoreDisplayBrightnessUpdateRequests(int32_t displayId, bool ignore) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IExynosHWCService::getInterfaceDescriptor());
+        data.writeInt32(displayId);
+        data.writeBool(ignore);
+        int result = remote()->transact(IGNORE_DISPLAY_BRIGHTNESS_UPDATE_REQUESTS, data, &reply);
+        if (result) ALOGE("IGNORE_DISPLAY_BRIGHTNESS_UPDATE_REQUESTS transact error(%d)", result);
+        return result;
+    }
+
+    virtual int32_t setDisplayBrightnessNits(int32_t displayId, float nits) {
+        Parcel data, reply;
+        data.writeInterfaceToken(IExynosHWCService::getInterfaceDescriptor());
+        data.writeInt32(displayId);
+        data.writeFloat(nits);
+        int result = remote()->transact(SET_DISPLAY_BRIGHTNESS_NITS, data, &reply);
+        if (result) ALOGE("SET_DISPLAY_BRIGHTNESS_NITS transact error(%d)", result);
         return result;
     }
 
@@ -753,6 +775,24 @@ status_t BnExynosHWCService::onTransact(
             uint32_t displayId = data.readUint32();
             uint32_t refreshRate = data.readUint32();
             return triggerRefreshRateIndicatorUpdate(displayId, refreshRate);
+        } break;
+
+        case IGNORE_DISPLAY_BRIGHTNESS_UPDATE_REQUESTS: {
+            CHECK_INTERFACE(IExynosHWCService, data, reply);
+            int32_t displayId = data.readInt32();
+            bool ignore = data.readBool();
+            int32_t error = ignoreDisplayBrightnessUpdateRequests(displayId, ignore);
+            reply->writeInt32(error);
+            return NO_ERROR;
+        } break;
+
+        case SET_DISPLAY_BRIGHTNESS_NITS: {
+            CHECK_INTERFACE(IExynosHWCService, data, reply);
+            int32_t displayId = data.readInt32();
+            float nits = data.readFloat();
+            int32_t error = setDisplayBrightnessNits(displayId, nits);
+            reply->writeInt32(error);
+            return NO_ERROR;
         } break;
 
         default:

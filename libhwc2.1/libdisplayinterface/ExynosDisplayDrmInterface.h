@@ -293,12 +293,13 @@ class ExynosDisplayDrmInterface :
         virtual int32_t setForcePanic();
         virtual int getDisplayFd() { return mDrmDevice->fd(); };
         virtual int32_t initDrmDevice(DrmDevice *drmDevice);
-        virtual uint32_t getDrmDisplayId(uint32_t type, uint32_t index);
+        virtual int getDrmDisplayId(uint32_t type, uint32_t index);
         virtual uint32_t getMaxWindowNum() { return mMaxWindowNum; };
         virtual int32_t getReadbackBufferAttributes(int32_t* /*android_pixel_format_t*/ outFormat,
                 int32_t* /*android_dataspace_t*/ outDataspace);
         virtual int32_t getDisplayIdentificationData(uint8_t* outPort,
                 uint32_t* outDataSize, uint8_t* outData);
+        virtual bool needRefreshOnLP();
 
         /* For HWC 2.4 APIs */
         virtual int32_t getDisplayVsyncPeriod(
@@ -352,6 +353,7 @@ class ExynosDisplayDrmInterface :
             HAL_MIPI_CMD_SYNC_LHBM,
             HAL_MIPI_CMD_SYNC_GHBM,
             HAL_MIPI_CMD_SYNC_BL,
+            HAL_MIPI_CMD_SYNC_OP_RATE,
         };
 
         struct ModeState {
@@ -520,6 +522,9 @@ class ExynosDisplayDrmInterface :
         int32_t mFrameCounter = 0;
         int32_t mPanelResolutionHsize = 0;
         int32_t mPanelResolutionVsize = 0;
+
+    public:
+        virtual bool readHotplugStatus();
 };
 
 #endif

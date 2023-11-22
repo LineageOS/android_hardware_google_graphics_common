@@ -103,6 +103,10 @@ void ExynosDeviceDrmInterface::init(ExynosDevice *exynosDevice) {
     }
 }
 
+void ExynosDeviceDrmInterface::postInit() {
+    mDrmDevice->event_listener()->InitWorker();
+}
+
 int32_t ExynosDeviceDrmInterface::initDisplayInterface(
         std::unique_ptr<ExynosDisplayInterface> &dispInterface) {
     ExynosDisplayDrmInterface *displayInterface =
@@ -217,23 +221,7 @@ void ExynosDeviceDrmInterface::ExynosDrmEventHandler::init(ExynosDevice *exynosD
 }
 
 void ExynosDeviceDrmInterface::ExynosDrmEventHandler::handleEvent(uint64_t timestamp_us) {
-    if (!mExynosDevice->isCallbackAvailable(HWC2_CALLBACK_HOTPLUG)) {
-        return;
-    }
-
-    for (auto it : mExynosDevice->mDisplays) {
-        /* Call UpdateModes to get plug status */
-        uint32_t numConfigs;
-
-        it->getDisplayConfigs(&numConfigs, NULL);
-        mExynosDevice->onHotPlug(getDisplayId(it->mType, it->mIndex), it->mPlugState);
-    }
-
-    /* TODO: Check plug status hear or ExynosExternalDisplay::handleHotplugEvent() */
-    ExynosExternalDisplayModule *display =
-        static_cast<ExynosExternalDisplayModule*>(mExynosDevice->getDisplay(getDisplayId(HWC_DISPLAY_EXTERNAL, 0)));
-    if (display != NULL)
-        display->handleHotplugEvent();
+    mExynosDevice->handleHotplug();
 }
 
 void ExynosDeviceDrmInterface::ExynosDrmEventHandler::handleHistogramEvent(uint32_t crtc_id,

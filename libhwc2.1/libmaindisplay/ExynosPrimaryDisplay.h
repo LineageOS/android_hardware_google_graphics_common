@@ -49,7 +49,8 @@ class ExynosPrimaryDisplay : public ExynosDisplay {
         virtual void initDisplayInterface(uint32_t interfaceType);
         virtual int32_t doDisplayConfigInternal(hwc2_config_t config) override;
 
-        virtual int setMinIdleRefreshRate(const int fps) override;
+        virtual int setMinIdleRefreshRate(const int fps,
+                                          const VrrThrottleRequester requester) override;
         virtual int setRefreshRateThrottleNanos(const int64_t delayNs,
                                                 const VrrThrottleRequester requester) override;
         virtual bool isDbmSupported() override;
@@ -145,8 +146,19 @@ class ExynosPrimaryDisplay : public ExynosDisplay {
         void calculateTimeline(hwc2_config_t config,
                                hwc_vsync_period_change_constraints_t* vsyncPeriodChangeConstraints,
                                hwc_vsync_period_change_timeline_t* outTimeline) override;
-        std::mutex mIdleRefreshRateThrottleMutex;
+
+        // min idle refresh rate
+        int mDefaultMinIdleRefreshRate;
+        // the min refresh rate in the blocking zone, e.g. 10 means 10Hz in the zone
+        int mMinIdleRefreshRateForBlockingZone;
+        // blocking zone threshold, e.g. 492 means entering the zone if DBV < 492
+        uint32_t mDbvThresholdForBlockingZone;
+        bool mUseBlockingZoneForMinIdleRefreshRate;
         int mMinIdleRefreshRate;
+        int mVrrThrottleFps[toUnderlying(VrrThrottleRequester::MAX)];
+        std::mutex mMinIdleRefreshRateMutex;
+
+        std::mutex mIdleRefreshRateThrottleMutex;
         int64_t mVrrThrottleNanos[toUnderlying(VrrThrottleRequester::MAX)];
         int64_t mRefreshRateDelayNanos;
         int64_t mLastRefreshRateAppliedNanos;

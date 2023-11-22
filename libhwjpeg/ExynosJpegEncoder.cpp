@@ -201,6 +201,6 @@ int ExynosJpegEncoder::setQuality(const unsigned char q_table[]) {
     return m_hwjpeg.SetQuality(q_table) ? 0 : -1;
 }
 
-int ExynosJpegEncoder::setPadding(unsigned char *padding, unsigned int num_planes) {
+int ExynosJpegEncoder::setPadding(const unsigned char *padding, unsigned int num_planes) {
     return m_hwjpeg.SetPadding(padding, num_planes) ? 0 : -1;
 }

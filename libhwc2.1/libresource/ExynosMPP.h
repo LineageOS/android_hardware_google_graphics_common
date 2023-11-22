@@ -474,8 +474,7 @@ class ExynosMPPSource {
             return 0;
         }
 
-        /* return 1 if it's needed */
-        uint32_t needHWResource(tdm_attr_t attr);
+        bool mNeedPreblending = false;
 };
 
 bool exynosMPPSourceComp(const ExynosMPPSource* l, const ExynosMPPSource* r);
@@ -693,6 +692,7 @@ public:
 
     virtual bool checkRotationCondition(struct exynos_image &src);
     void updateAttr();
+    void updatePreassignedDisplay(uint32_t fromDisplayBit, uint32_t toDisplayBit);
     dstMetaInfo getDstMetaInfo(android_dataspace_t dstDataspace);
     float getAssignedCapacity();
 

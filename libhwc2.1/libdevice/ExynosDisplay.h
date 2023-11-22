@@ -152,6 +152,7 @@ enum class VrrThrottleRequester : uint32_t {
     PIXEL_DISP = 0,
     TEST,
     LHBM,
+    BRIGHTNESS,
     MAX,
 };
 
@@ -218,7 +219,7 @@ struct exynos_win_config_data
     struct decon_frame src = {0, 0, 0, 0, 0, 0};
     struct decon_frame dst = {0, 0, 0, 0, 0, 0};
     bool protection = false;
-    bool compression = false;
+    CompressionInfo compressionInfo;
     bool needColorTransform = false;
 
     void reset(){
@@ -309,6 +310,7 @@ class ExynosCompositionInfo : public ExynosMPPSource {
         ExynosCompositionInfo(uint32_t type);
         uint32_t mType;
         bool mHasCompositionLayer;
+        bool mPrevHasCompositionLayer = false;
         int32_t mFirstIndex;
         int32_t mLastIndex;
         buffer_handle_t mTargetBuffer;
@@ -322,13 +324,13 @@ class ExynosCompositionInfo : public ExynosMPPSource {
         exynos_win_config_data mLastWinConfigData;
 
         int32_t mWindowIndex;
-        bool mCompressed;
+        CompressionInfo mCompressionInfo;
 
         void initializeInfos(ExynosDisplay *display);
+        void initializeInfosComplete(ExynosDisplay *display);
         void setTargetBuffer(ExynosDisplay *display, buffer_handle_t handle,
                 int32_t acquireFence, android_dataspace dataspace);
-        void setCompressed(bool compressed);
-        bool getCompressed();
+        void setCompressionType(uint32_t compressionType);
         void dump(String8& result);
         String8 getTypeStr();
 };
@@ -1207,6 +1209,7 @@ class ExynosDisplay {
         void increaseMPPDstBufIndex();
         virtual void initDisplayInterface(uint32_t interfaceType);
         virtual int32_t updateColorConversionInfo() { return NO_ERROR; };
+        virtual int32_t resetColorMappingInfo(ExynosMPPSource* /*mppSrc*/) { return NO_ERROR; }
         virtual int32_t updatePresentColorConversionInfo() { return NO_ERROR; };
         virtual bool checkRrCompensationEnabled() { return false; };
         virtual bool isColorCalibratedByDevice() { return false; };
@@ -1258,6 +1261,12 @@ class ExynosDisplay {
         int32_t getRCDLayerSupport(bool& outSupport) const;
         int32_t setDebugRCDLayerEnabled(bool enable);
 
+        /* ignore / accept brightness update requests */
+        virtual int32_t ignoreBrightnessUpdateRequests(bool ignore);
+
+        /* set brightness to specific nits value */
+        virtual int32_t setBrightnessNits(const float nits);
+
     protected:
         virtual bool getHDRException(ExynosLayer *layer);
         virtual int32_t getActiveConfigInternal(hwc2_config_t* outConfig);
@@ -1275,7 +1284,10 @@ class ExynosDisplay {
         std::unique_ptr<ExynosDisplayInterface> mDisplayInterface;
         void requestLhbm(bool on);
 
-        virtual int setMinIdleRefreshRate(const int __unused fps) { return NO_ERROR; }
+        virtual int setMinIdleRefreshRate(const int __unused fps,
+                                          const VrrThrottleRequester __unused requester) {
+            return NO_ERROR;
+        }
         virtual int setRefreshRateThrottleNanos(const int64_t __unused delayNanos,
                                                 const VrrThrottleRequester __unused requester) {
             return NO_ERROR;
@@ -1539,7 +1551,7 @@ class ExynosDisplay {
         virtual bool isEnabled() { return mPlugState; }
 
         // Resource TDM (Time-Division Multiplexing)
-        std::map<uint32_t, DisplayTDMInfo> mDisplayTDMInfo;
+        std::map<std::pair<int32_t, int32_t>, DisplayTDMInfo> mDisplayTDMInfo;
 
         class RotatingLogFileWriter {
         public:
@@ -1597,12 +1609,20 @@ class ExynosDisplay {
             virtual int32_t onConfig(hwc2_config_t __unused cfg) { return 0; }
             virtual int32_t onBrightness(uint32_t __unused dbv) { return 0; }
             virtual int32_t onPowerMode(int32_t __unused mode) { return 0; }
-            virtual int32_t getOperationRate() { return 0; }
+            virtual int32_t getTargetOperationRate() { return 0; }
         };
 
     public:
         std::unique_ptr<OperationRateManager> mOperationRateManager;
         bool isOperationRateSupported() { return mOperationRateManager != nullptr; }
+        void handleTargetOperationRate();
+
+        bool mHpdStatus;
+
+        void invalidate();
+        virtual bool checkHotplugEventUpdated(bool &hpdStatus);
+        virtual void handleHotplugEvent(bool hpdStatus);
+        virtual void hotplug();
 
         class RefreshRateIndicatorHandler : public DrmSysfsEventHandler {
         public:
@@ -1631,6 +1651,10 @@ class ExynosDisplay {
         int32_t setRefreshRateChangedCallbackDebugEnabled(bool enabled);
         void updateRefreshRateIndicator();
         nsecs_t getLastLayerUpdateTime();
+        virtual void checkPreblendingRequirement(){};
+
+        void resetColorMappingInfoForClientComp();
+        void storePrevValidateCompositionType();
 };
 
 #endif //_EXYNOSDISPLAY_H

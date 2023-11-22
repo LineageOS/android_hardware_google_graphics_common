@@ -25,6 +25,7 @@
 #include <xf86drmMode.h>
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace android {
 
@@ -53,9 +54,13 @@ class DrmConnector {
   std::string name() const;
 
   int UpdateModes();
+  int UpdateEdidProperty();
 
   const std::vector<DrmMode> &modes() const {
     return modes_;
+  }
+  std::recursive_mutex &modesLock() {
+    return modes_lock_;
   }
   const DrmMode &active_mode() const;
   void set_active_mode(const DrmMode &mode);
@@ -82,6 +87,8 @@ class DrmConnector {
   const DrmProperty &mipi_sync() const;
   const DrmProperty &panel_idle_support() const;
   const DrmProperty &vrr_switch_duration() const;
+  const DrmProperty &operation_rate() const;
+  const DrmProperty &refresh_on_lp() const;
 
   const std::vector<DrmProperty *> &properties() const {
       return properties_;
@@ -118,6 +125,7 @@ class DrmConnector {
 
   DrmMode active_mode_;
   std::vector<DrmMode> modes_;
+  std::recursive_mutex modes_lock_;
   DrmMode lp_mode_;
 
   DrmProperty dpms_property_;
@@ -140,6 +148,8 @@ class DrmConnector {
   DrmProperty mipi_sync_;
   DrmProperty panel_idle_support_;
   DrmProperty vrr_switch_duration_;
+  DrmProperty operation_rate_;
+  DrmProperty refresh_on_lp_;
   std::vector<DrmProperty *> properties_;
 
   std::vector<DrmEncoder *> possible_encoders_;

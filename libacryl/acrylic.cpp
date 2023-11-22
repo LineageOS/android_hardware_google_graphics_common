@@ -106,7 +106,8 @@ bool Acrylic::validateAllLayers()
         return false;
     }
 
-    if (mCanvas.isCompressed() && !cap.isFeatureSupported(HW2DCapability::FEATURE_AFBC_ENCODE)) {
+    if ((mCanvas.isCompressed() || mCanvas.isCompressedWideblk()) &&
+        !cap.isFeatureSupported(HW2DCapability::FEATURE_AFBC_ENCODE)) {
         ALOGE("AFBC encoding is not supported");
         return false;
     }
@@ -127,7 +128,8 @@ bool Acrylic::validateAllLayers()
             return false;
         }
 
-        if (layer->isCompressed() && !cap.isFeatureSupported(HW2DCapability::FEATURE_AFBC_DECODE)) {
+        if ((layer->isCompressed() || layer->isCompressedWideblk()) &&
+            !cap.isFeatureSupported(HW2DCapability::FEATURE_AFBC_DECODE)) {
             ALOGE("AFBC decoding is not supported");
             return false;
         }

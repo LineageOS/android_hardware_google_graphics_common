@@ -21,12 +21,10 @@
 #include <cutils/properties.h>
 
 #define EXTERNAL_DISPLAY_SKIP_LAYER   0x00000100
-#define SKIP_EXTERNAL_FRAME 5
+#define SKIP_EXTERNAL_FRAME 0
 
 class ExynosExternalDisplay : public ExynosDisplay {
     public:
-        hwc2_config_t mActiveConfigIndex;
-
         /* Methods */
         ExynosExternalDisplay(uint32_t index, ExynosDevice* device, const std::string& displayName);
         ~ExynosExternalDisplay();
@@ -37,7 +35,6 @@ class ExynosExternalDisplay : public ExynosDisplay {
         int getDisplayConfigs(uint32_t* outNumConfigs, hwc2_config_t* outConfigs);
         virtual int enable();
         int disable();
-        void hotplug();
 
         /* validateDisplay(..., outNumTypes, outNumRequests)
          * Descriptor: HWC2_FUNCTION_VALIDATE_DISPLAY
@@ -50,6 +47,9 @@ class ExynosExternalDisplay : public ExynosDisplay {
         virtual void closeExternalDisplay();
         virtual int32_t getActiveConfig(hwc2_config_t* outconfig);
         virtual int32_t startPostProcessing();
+
+        virtual int32_t setColorTransform(const float *, int32_t) { return HWC2_ERROR_NONE; }
+
         virtual int32_t setClientTarget(
                 buffer_handle_t target,
                 int32_t acquireFence, int32_t /*android_dataspace_t*/ dataspace);
@@ -57,14 +57,13 @@ class ExynosExternalDisplay : public ExynosDisplay {
         virtual void initDisplayInterface(uint32_t interfaceType);
         bool checkRotate();
         bool handleRotate();
-        virtual void handleHotplugEvent();
+        virtual void handleHotplugEvent(bool hpdStatus);
 
         bool mEnabled;
         bool mBlanked;
         bool mVirtualDisplayState;
         bool mIsSkipFrame;
         int mExternalHdrSupported;
-        bool mHpdStatus;
         Mutex mExternalMutex;
 
         int mSkipFrameCount;

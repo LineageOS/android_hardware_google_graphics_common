@@ -509,6 +509,7 @@ static g2d_fmt __halfmt_to_g2dfmt[] = {
     {MALI_GRALLOC_FORMAT_INTERNAL_YUV420_10BIT_I, G2D_FMT_NV12_P010, 1, 0},
     {HAL_PIXEL_FORMAT_EXYNOS_YCbCr_P010_M,        G2D_FMT_NV12_P010, 2, 0},
     {HAL_PIXEL_FORMAT_EXYNOS_YCbCr_P010_SPN,      G2D_FMT_NV12_P010, 1, 0},
+    {MALI_GRALLOC_FORMAT_INTERNAL_P010,           G2D_FMT_NV12_P010, 1, 0},
     {HAL_PIXEL_FORMAT_YCbCr_422_I,                G2D_FMT_YUYV,      1, 0},
     {HAL_PIXEL_FORMAT_EXYNOS_YCrCb_422_I,         G2D_FMT_YVYU,      1, 0},
     {HAL_PIXEL_FORMAT_YCbCr_422_SP,               G2D_FMT_NV16,      1, 0},
@@ -701,6 +702,13 @@ bool AcrylicCompositorG2D::prepareImage(AcrylicCanvas &layer, struct g2d_layer &
             cmd[G2DSFR_IMG_COLORMODE] = G2D_FMT_BGR565;
         cmd[G2DSFR_IMG_COLORMODE] |= G2D_DATAFORMAT_AFBC;
         cmd[G2DSFR_IMG_STRIDE] = 0;
+    } else if (layer.isCompressedWideblk()) {
+        if (g2dfmt->g2dfmt == G2D_FMT_RGB565) cmd[G2DSFR_IMG_COLORMODE] = G2D_FMT_BGR565;
+        cmd[G2DSFR_IMG_COLORMODE] |= G2D_DATAFORMAT_AFBC;
+        cmd[G2DSFR_IMG_STRIDE] = 0;
+
+        /*Add AFBC image flags for 32x8 block size*/
+        image.flags |= G2D_LAYERFLAG_AFBC_WIDEBLK;
     } else if (g2dfmt->g2dfmt & G2D_DATAFORMAT_SBWC) {
         cmd[G2DSFR_IMG_STRIDE] = 0;
     } else {
@@ -889,7 +897,7 @@ bool AcrylicCompositorG2D::prepareSource(AcrylicLayer &layer, struct g2d_layer &
     cmd[G2DSFR_SRC_DSTRIGHT]  = window.size.hori + window.pos.hori;
     cmd[G2DSFR_SRC_DSTBOTTOM] = window.size.vert + window.pos.vert;
 
-    if (layer.isCompressed()) {
+    if (layer.isCompressed() || layer.isCompressedWideblk()) {
         cmd[G2DSFR_IMG_WIDTH]--;
         cmd[G2DSFR_IMG_HEIGHT]--;
     }
@@ -1124,14 +1132,16 @@ bool AcrylicCompositorG2D::executeG2D(int fence[], unsigned int num_fences, bool
             return false;
         }
 
-        mHdrWriter.setLayerStaticMetadata(i, layer.getDataspace(),
-                                          layer.getMinMasteringLuminance(),
-                                          layer.getMaxMasteringLuminance());
+        if (layer.getLayerHDR()) {
+            mHdrWriter.setLayerStaticMetadata(i, layer.getDataspace(),
+                                              layer.getMinMasteringLuminance(),
+                                              layer.getMaxMasteringLuminance());
 
-        bool alpha_premult = (layer.getCompositingMode() == HWC_BLENDING_PREMULT)
-                             || (layer.getCompositingMode() == HWC2_BLEND_MODE_PREMULTIPLIED);
-        mHdrWriter.setLayerImageInfo(i, layer.getFormat(), alpha_premult);
-        mHdrWriter.setLayerOpaqueData(i, layer.getLayerData(), layer.getLayerDataLength());
+            bool alpha_premult = (layer.getCompositingMode() == HWC_BLENDING_PREMULT)
+                                 || (layer.getCompositingMode() == HWC2_BLEND_MODE_PREMULTIPLIED);
+            mHdrWriter.setLayerImageInfo(i, layer.getFormat(), alpha_premult);
+            mHdrWriter.setLayerOpaqueData(i, layer.getLayerData(), layer.getLayerDataLength());
+        }
     }
 
     mHdrWriter.setTargetInfo(getCanvas().getDataspace(), getTargetDisplayInfo());
