@@ -1,11 +1,124 @@
+// Copyright (C) 2016 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package {
     // See: http://go/android-license-faq
-    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_applicable_licenses: [
+        "hardware_google_graphics_common_libacryl_license",
+    ],
+}
+
+license {
+    name: "hardware_google_graphics_common_libacryl_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+    ],
+    license_text: [
+        "NOTICE",
+    ],
 }
 
 cc_library_headers {
     name: "google_libacryl_hdrplugin_headers",
     proprietary: true,
     local_include_dirs: ["local_include"],
-    export_include_dirs: ["hdrplugin_headers", "local_include"],
+    export_include_dirs: [
+        "hdrplugin_headers",
+        "local_include",
+    ],
+}
+
+// include_dirs is not selectable right now, change to select statement after it is supported.
+soong_config_module_type {
+    name: "libacryl_acryl_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "acryl",
+    value_variables: [
+        "libacryl_c_include",
+    ],
+    properties: [
+        "include_dirs",
+    ],
+}
+
+libacryl_acryl_cc_defaults {
+    name: "libacryl_include_dirs_cc_defaults",
+    soong_config_variables: {
+        libacryl_c_include: {
+            include_dirs: ["%s"],
+        },
+    },
+}
+
+cc_library_shared {
+    name: "libacryl",
+
+    cflags: [
+        "-DLOG_TAG=\"hwc-libacryl\"",
+        "-Wthread-safety",
+    ] + select(soong_config_variable("acryl", "libacryl_use_g2d_hdr_plugin"), {
+        true: ["-DLIBACRYL_G2D_HDR_PLUGIN"],
+        default: [],
+    }) + select(soong_config_variable("acryl", "libacryl_default_compositor"), {
+        any @ flag_val: ["-DLIBACRYL_DEFAULT_COMPOSITOR=\"" + flag_val + "\""],
+        default: ["-DLIBACRYL_DEFAULT_COMPOSITOR=\"no_default_compositor\""],
+    }) + select(soong_config_variable("acryl", "libacryl_default_scaler"), {
+        any @ flag_val: ["-DLIBACRYL_DEFAULT_SCALER=\"" + flag_val + "\""],
+        default: ["-DLIBACRYL_DEFAULT_SCALER=\"no_default_scaler\""],
+    }) + select(soong_config_variable("acryl", "libacryl_default_blter"), {
+        any @ flag_val: ["-DLIBACRYL_DEFAULT_BLTER=\"" + flag_val + "\""],
+        default: ["-DLIBACRYL_DEFAULT_BLTER=\"no_default_blter\""],
+    }),
+
+    shared_libs: [
+        "libcutils",
+        "libion_google",
+        "liblog",
+        "libutils",
+    ] + select(soong_config_variable("acryl", "libacryl_g2d_hdr_plugin"), {
+        any @ flag_val: [flag_val],
+        default: [],
+    }),
+
+    header_libs: [
+        "google_libacryl_hdrplugin_headers",
+        "google_hal_headers",
+        "//hardware/google/gchips/gralloc4/src:libgralloc_headers",
+    ],
+
+    local_include_dirs: [
+        "include",
+        "local_include",
+    ],
+
+    export_include_dirs: ["include"],
+
+    srcs: [
+        "acrylic.cpp",
+        "acrylic_device.cpp",
+        "acrylic_factory.cpp",
+        "acrylic_formats.cpp",
+        "acrylic_g2d.cpp",
+        "acrylic_layer.cpp",
+        "acrylic_performance.cpp",
+    ],
+
+    proprietary: true,
+
+    defaults: [
+        "android.hardware.graphics.common-ndk_shared",
+        "libacryl_include_dirs_cc_defaults",
+    ],
 }
