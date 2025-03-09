@@ -155,7 +155,7 @@ void VariableRefreshRateStatistic::dump(String8& result, const std::vector<std::
     }
 
     if (hasDelta) {
-        result.appendFormat("Elapsed Time: %lu \n", (curTime - mLastDumpsysTime) / 1000000);
+        result.appendFormat("Elapsed Time: %" PRId64 " \n", (curTime - mLastDumpsysTime) / 1000000);
     }
 
     std::string headerString = hasDelta ? normalizeString("StateName") + "\t" +

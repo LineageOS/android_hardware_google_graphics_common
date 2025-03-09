@@ -1,0 +1,229 @@
+// Copyright (C) 2012 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// See: http://go/android-license-faq
+package {
+    default_applicable_licenses: ["hardware_google_graphics_common_libhwc2.1_license"],
+}
+
+license {
+    name: "hardware_google_graphics_common_libhwc2.1_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+    ],
+    license_text: [
+        "NOTICE",
+    ],
+}
+
+cc_library_shared {
+    name: "libdrmresource",
+
+    shared_libs: [
+        "libcutils",
+        "libdrm",
+        "liblog",
+        "libutils",
+        "libhardware",
+    ],
+    proprietary: true,
+    local_include_dirs: ["libdrmresource/include"],
+    srcs: [
+        "libdrmresource/utils/worker.cpp",
+        "libdrmresource/drm/resourcemanager.cpp",
+        "libdrmresource/drm/drmdevice.cpp",
+        "libdrmresource/drm/drmconnector.cpp",
+        "libdrmresource/drm/drmcrtc.cpp",
+        "libdrmresource/drm/drmencoder.cpp",
+        "libdrmresource/drm/drmmode.cpp",
+        "libdrmresource/drm/drmplane.cpp",
+        "libdrmresource/drm/drmproperty.cpp",
+        "libdrmresource/drm/drmeventlistener.cpp",
+        "libdrmresource/drm/vsyncworker.cpp",
+    ],
+    cflags: [
+        "-DHLOG_CODE=0",
+        "-Wno-unused-parameter",
+        "-Wthread-safety",
+    ] + select(soong_config_variable("ANDROID", "target_board_platform"), {
+        any @ soc_ver: ["-DSOC_VERSION=" + soc_ver],
+        default: [],
+    }),
+    header_libs: [
+        "device_kernel_headers",
+    ],
+    export_shared_lib_headers: ["libdrm"],
+    defaults: [
+        "google_graphics_cc_default",
+    ],
+}
+
+// For converting libexynosdisplay
+filegroup {
+    name: "libexynosdisplay_common_srcs",
+    srcs: [
+        "libhwchelper/ExynosHWCHelper.cpp",
+        "DisplaySceneInfo.cpp",
+        "ExynosHWCDebug.cpp",
+        "libdevice/BrightnessController.cpp",
+        "libdevice/ExynosDisplay.cpp",
+        "libdevice/ExynosDevice.cpp",
+        "libdevice/ExynosLayer.cpp",
+        "libdevice/HistogramDevice.cpp",
+        "libdevice/DisplayTe2Manager.cpp",
+        "libmaindisplay/ExynosPrimaryDisplay.cpp",
+        "libresource/ExynosMPP.cpp",
+        "libresource/ExynosResourceManager.cpp",
+        "libexternaldisplay/ExynosExternalDisplay.cpp",
+        "libvirtualdisplay/ExynosVirtualDisplay.cpp",
+        "libdisplayinterface/ExynosDeviceInterface.cpp",
+        "libdisplayinterface/ExynosDisplayInterface.cpp",
+        "libdisplayinterface/ExynosDeviceDrmInterface.cpp",
+        "libdisplayinterface/ExynosDisplayDrmInterface.cpp",
+        "libvrr/display/common/CommonDisplayContextProvider.cpp",
+        "libvrr/display/exynos/ExynosDisplayContextProvider.cpp",
+        "libvrr/Power/PowerStatsProfileTokenGenerator.cpp",
+        "libvrr/Power/DisplayStateResidencyProvider.cpp",
+        "libvrr/Power/DisplayStateResidencyWatcher.cpp",
+        "libvrr/FileNode.cpp",
+        "libvrr/RefreshRateCalculator/InstantRefreshRateCalculator.cpp",
+        "libvrr/RefreshRateCalculator/ExitIdleRefreshRateCalculator.cpp",
+        "libvrr/RefreshRateCalculator/PeriodRefreshRateCalculator.cpp",
+        "libvrr/RefreshRateCalculator/CombinedRefreshRateCalculator.cpp",
+        "libvrr/RefreshRateCalculator/RefreshRateCalculatorFactory.cpp",
+        "libvrr/RefreshRateCalculator/VideoFrameRateCalculator.cpp",
+        "libvrr/Statistics/VariableRefreshRateStatistic.cpp",
+        "libvrr/Utils.cpp",
+        "libvrr/VariableRefreshRateController.cpp",
+        "libvrr/VariableRefreshRateVersion.cpp",
+        "pixel-display.cpp",
+        "pixelstats-display.cpp",
+        "histogram_mediator.cpp",
+    ],
+}
+
+filegroup {
+    name: "pixel_display_default_xml",
+    srcs: [
+        "pixel-display-default.xml",
+    ],
+}
+
+filegroup {
+    name: "pixel_display_secondary_xml",
+    srcs: [
+        "pixel-display-secondary.xml",
+    ],
+}
+
+cc_defaults {
+    name: "libexynosdisplay_common_cc_default",
+
+    shared_libs: [
+        "liblog",
+        "libcutils",
+        "libhardware",
+        "android.hardware.graphics.composer@2.4",
+        "android.hardware.graphics.allocator@2.0",
+        "android.hardware.graphics.mapper@2.0",
+        "libhardware_legacy",
+        "libutils",
+        "libsync",
+        "libacryl",
+        "libui",
+        "libion_google",
+        "libdrmresource",
+        "libdrm",
+        "libvendorgraphicbuffer",
+        "libbinder_ndk",
+        "android.hardware.power-V2-ndk",
+        "//hardware/google/interfaces:pixel-power-ext-V1-ndk",
+        "//hardware/google/pixel:pixel_stateresidency_provider_aidl_interface-ndk",
+        "android.hardware.graphics.composer3-V4-ndk",
+        "android.hardware.drm-V1-ndk",
+        "//hardware/google/interfaces:com.google.hardware.pixel.display-V13-ndk",
+        "android.frameworks.stats-V2-ndk",
+        "//hardware/google/pixel:libpixelatoms_defs",
+        "//hardware/google/pixel:pixelatoms-cpp",
+        "libbinder_ndk",
+        "libbase",
+        "libpng",
+        "libprocessgroup",
+    ],
+
+    header_libs: [
+        "device_kernel_headers",
+        "google_hal_headers",
+        "libbinder_headers",
+        "//hardware/google/gchips/gralloc4:libgralloc_headers",
+        "libhardware_legacy_headers",
+    ],
+
+    static_libs: [
+        "libVendorVideoApi",
+        "libjsoncpp",
+        "libaidlcommonsupport",
+    ],
+    proprietary: true,
+
+    include_dirs: [
+        "hardware/google/graphics/common/include",
+        "hardware/google/graphics/common/libhwc2.1",
+        "hardware/google/graphics/common/libhwc2.1/libdevice",
+        "hardware/google/graphics/common/libhwc2.1/libmaindisplay",
+        "hardware/google/graphics/common/libhwc2.1/libexternaldisplay",
+        "hardware/google/graphics/common/libhwc2.1/libvirtualdisplay",
+        "hardware/google/graphics/common/libhwc2.1/libhwchelper",
+        "hardware/google/graphics/common/libhwc2.1/libresource",
+        "hardware/google/graphics/common/libhwc2.1/libhwcService",
+        "hardware/google/graphics/common/libhwc2.1/libdisplayinterface",
+        "hardware/google/graphics/common/libhwc2.1/libdrmresource/include",
+        "hardware/google/graphics/common/libhwc2.1/libvrr",
+        "hardware/google/graphics/common/libhwc2.1/libvrr/interface",
+    ],
+
+    srcs: [
+        ":libexynosdisplay_common_srcs",
+    ],
+
+    export_shared_lib_headers: [
+        "libacryl",
+        "libdrm",
+        "libui",
+        "libvendorgraphicbuffer",
+    ],
+
+    vintf_fragments: [
+        ":pixel_display_default_xml",
+    ] + select(soong_config_variable("google_graphics", "uses_idisplay_intf_sec"), {
+        true: [":pixel_display_secondary_xml"],
+        default: [],
+    }),
+
+    cflags: [
+        "-DHLOG_CODE=0",
+        "-DLOG_TAG=\"hwc-display\"",
+        "-Wno-unused-parameter",
+        "-Wthread-safety",
+    ] + select(soong_config_variable("ANDROID", "target_board_platform"), {
+        any @ soc_ver: ["-DSOC_VERSION=" + soc_ver],
+        default: [],
+    }),
+
+    defaults: [
+        // include hardware/google/graphics/common/BoardConfigCFlags.mk
+        "google_graphics_cc_default",
+    ],
+}

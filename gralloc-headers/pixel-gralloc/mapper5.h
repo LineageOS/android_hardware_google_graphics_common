@@ -9,7 +9,7 @@
 #include <vndksupport/linker.h>
 
 #include "metadata.h"
-#include "utils.h"
+#include "utils-internal.h"
 
 namespace pixel::graphics::mapper {
 

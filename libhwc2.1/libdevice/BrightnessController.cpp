@@ -1116,28 +1116,43 @@ int BrightnessController::updateCabcMode() {
 }
 
 int BrightnessController::applyBrightnessViaSysfs(uint32_t level) {
-    if (mBrightnessOfs.is_open()) {
-        ATRACE_NAME("write_bl_sysfs");
-        mBrightnessOfs.seekp(std::ios_base::beg);
-        mBrightnessOfs << std::to_string(level);
-        mBrightnessOfs.flush();
-        if (mBrightnessOfs.fail()) {
-            ALOGE("%s fail to write brightness %d", __func__, level);
-            mBrightnessOfs.clear();
-            return HWC2_ERROR_NO_RESOURCES;
+    if (!mBrightnessOfs.is_open()) {
+        String8 nodeName;
+        nodeName.appendFormat(BRIGHTNESS_SYSFS_NODE, mPanelIndex);
+        for (int i = 0; i < 3; ++i) {
+            mBrightnessOfs.open(nodeName.c_str(), std::ofstream::out);
+            if (mBrightnessOfs.fail()) {
+                ALOGW("%s %s fail to open, retrying(%d)...", __func__, nodeName.c_str(), i);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            } else {
+                ALOGI("%s open %s successfully", __func__, nodeName.c_str());
+                break;
+            }
         }
-
-        {
-            std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
-            mBrightnessLevel.reset(level);
-            mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
-            printBrightnessStates("sysfs");
+        if (!mBrightnessOfs.is_open()) {
+            ALOGI("%s failed to open %s successfully", __func__, nodeName.c_str());
+            return HWC2_ERROR_UNSUPPORTED;
         }
-
-        return NO_ERROR;
     }
 
-    return HWC2_ERROR_UNSUPPORTED;
+    ATRACE_NAME("write_bl_sysfs");
+    mBrightnessOfs.seekp(std::ios_base::beg);
+    mBrightnessOfs << std::to_string(level);
+    mBrightnessOfs.flush();
+    if (mBrightnessOfs.fail()) {
+        ALOGE("%s fail to write brightness %d", __func__, level);
+        mBrightnessOfs.clear();
+        return HWC2_ERROR_NO_RESOURCES;
+    }
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(mBrightnessMutex);
+        mBrightnessLevel.reset(level);
+        mPrevDisplayWhitePointNits = mDisplayWhitePointNits;
+        printBrightnessStates("sysfs");
+    }
+
+    return NO_ERROR;
 }
 
 int BrightnessController::applyCabcModeViaSysfs(uint8_t mode) {

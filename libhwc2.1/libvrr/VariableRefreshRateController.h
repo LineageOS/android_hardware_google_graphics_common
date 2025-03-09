@@ -133,8 +133,13 @@ public:
     void dump(String8& result, const std::vector<std::string>& args = {});
 
 private:
+    static constexpr char kMinimumRefreshRateRequestTraceName[] = "MinimumRefreshRateRequest";
+    static constexpr char kMinimumRefreshRateConfiguredTraceName[] = "MinimumRefreshRateConfigured";
+
     static constexpr int kMaxFrameRate = 120;
     static constexpr int kMaxTefrequency = 240;
+
+    static constexpr int64_t kWaitForConfigTimeoutNs = std::nano::den; // 1 second.
 
     static constexpr int kDefaultRingBufferCapacity = 128;
     static constexpr int64_t kDefaultWakeUpTimeInPowerSaving =
@@ -275,6 +280,8 @@ private:
 
     void cancelPresentTimeoutHandlingLocked();
 
+    void createMinimumRefreshRateTimeoutEventLocked();
+
     void dropEventLocked();
     void dropEventLocked(VrrControllerEventType eventType);
 
@@ -334,6 +341,8 @@ private:
 
     void postEvent(VrrControllerEventType type, TimedEvent& timedEvent);
     void postEvent(VrrControllerEventType type, int64_t when);
+
+    int setFixedRefreshRateRangeWorker();
 
     bool shouldHandleVendorRenderingTimeout() const;
 
@@ -400,11 +409,17 @@ private:
     // only when |mMinimumRefreshRate| is greater than 1.
     uint64_t mMaximumRefreshRateTimeoutNs = 0;
     std::optional<TimedEvent> mMinimumRefreshRateTimeoutEvent;
-    MinimumRefreshRatePresentStates mMinimumRefreshRatePresentStates = kMinRefreshRateUnset;
+    MinimumRefreshRatePresentStates mMinimumRefreshRatePresentState = kMinRefreshRateUnset;
+    std::optional<uint32_t> mPendingMinimumRefreshRateRequest = std::nullopt;
 
     std::vector<std::shared_ptr<RefreshRateChangeListener>> mRefreshRateChangeListeners;
 
     PendingVendorRenderingTimeoutTasks mPendingVendorRenderingTimeoutTasks;
+
+    // It stores the last present time as a cadence hint. Note that it does not update when
+    // notifyExpectedPresent is called, as notifyExpectedPresent may not result in an actual
+    // display.
+    int64_t mLastExpectedPresentTimeNs = -1;
 
     std::mutex mMutex;
     std::condition_variable mCondition;

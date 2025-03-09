@@ -264,7 +264,7 @@ std::string DrmConnector::name() const {
   }
 }
 
-int DrmConnector::UpdateModes(bool use_vrr_mode) {
+int DrmConnector::UpdateModes(bool is_vrr_mode) {
   std::lock_guard<std::recursive_mutex> lock(modes_lock_);
 
   int fd = drm_->fd();
@@ -305,12 +305,9 @@ int DrmConnector::UpdateModes(bool use_vrr_mode) {
       }
     }
     if (!exists) {
-      bool is_vrr_mode = ((c->modes[i].type & DRM_MODE_TYPE_VRR) != 0);
       // Remove modes that mismatch with the VRR setting..
-      if ((use_vrr_mode != is_vrr_mode) ||
-          (!external() && is_vrr_mode &&
-           ((c->modes[i].flags & DRM_MODE_FLAG_TE_FREQ_X2) ||
-            (c->modes[i].flags & DRM_MODE_FLAG_TE_FREQ_X4)))) {
+      if (type_ == DRM_MODE_CONNECTOR_DSI &&
+          is_vrr_mode != ((c->modes[i].type & DRM_MODE_TYPE_VRR) != 0 || c->modes[i].vscan > 0)) {
         continue;
       }
       DrmMode m(&c->modes[i]);

@@ -23,7 +23,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace displaycolor {
 
@@ -366,7 +368,8 @@ struct LtmParams {
     Roi roi;
     // for debug purpose
     bool force_enable{};
-    bool operator==(const LtmParams &rhs) const {
+    bool sr_in_gtm{true};
+    bool ConfigUpdateNeeded(const LtmParams &rhs) const {
         return display == rhs.display && roi == rhs.roi && force_enable == rhs.force_enable;
     }
 };
@@ -424,6 +427,9 @@ struct DisplayScene {
 
     /// dbv level
     uint32_t dbv = 0;
+
+    /// the nits value corresponding to the dbv above
+    float nits = 0;
 
     /// lhbm status
     bool lhbm_on = false;
@@ -611,6 +617,21 @@ class IDisplayColorGeneric {
     //deprecated by the 'int64_t display' version
     virtual bool IsEarlyPowerOnNeeded(const DisplayType display) = 0;
     virtual bool IsEarlyPowerOnNeeded(const int64_t display) = 0;
+
+    /**
+     * @brief a debug call from command line with arguments, output will show on screen.
+     * @param display id
+     * @param cur_obj for the current object
+     * @param obj_sel a path (object names concatenated by dots) to locate the target object
+     * @param action to apply to the target object
+     * @param args the arguments for the action
+     * @return string to show on screen
+     */
+    virtual std::string Debug(const int64_t display,
+                              const std::string& cur_obj,
+                              const std::string& obj_sel,
+                              const std::string& action,
+                              const std::vector<std::string>& args) = 0;
 };
 
 extern "C" {

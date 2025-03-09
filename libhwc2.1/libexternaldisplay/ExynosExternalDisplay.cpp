@@ -55,6 +55,7 @@ ExynosExternalDisplay::ExynosExternalDisplay(uint32_t index, ExynosDevice* devic
     //TODO : Hard coded currently
     mNumMaxPriorityAllowed = 1;
     mPowerModeState = (hwc2_power_mode_t)HWC_POWER_MODE_OFF;
+    mDisplayControl.multiThreadedPresent = true;
 }
 
 ExynosExternalDisplay::~ExynosExternalDisplay()
@@ -81,6 +82,7 @@ int ExynosExternalDisplay::openExternalDisplay()
     mSkipFrameCount = SKIP_FRAME_COUNT;
     mSkipStartFrame = 0;
     mPlugState = true;
+    setGeometryChanged(GEOMETRY_DEVICE_DISPLAY_ADDED);
 
     if (mLayers.size() != 0) {
         mLayers.clear();
@@ -110,6 +112,7 @@ void ExynosExternalDisplay::closeExternalDisplay()
     DISPLAY_LOGD(eDebugExternalDisplay, "Close fd for External Display");
 
     mPlugState = false;
+    setGeometryChanged(GEOMETRY_DEVICE_DISPLAY_REMOVED);
     mEnabled = false;
     mBlanked = false;
     mSkipFrameCount = SKIP_FRAME_COUNT;
@@ -452,6 +455,7 @@ int ExynosExternalDisplay::enable()
 
     mEnabled = true;
     mPowerModeState = (hwc2_power_mode_t)HWC_POWER_MODE_NORMAL;
+    mDisplayInterface->triggerClearDisplayPlanes();
 
     reportUsage(true);
 

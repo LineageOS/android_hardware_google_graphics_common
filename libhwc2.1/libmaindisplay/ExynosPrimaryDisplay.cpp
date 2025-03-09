@@ -1357,6 +1357,7 @@ int32_t ExynosPrimaryDisplay::setDisplayTemperature(const int temperature) {
 void ExynosPrimaryDisplay::onProximitySensorStateChanged(bool active) {
     if (mProximitySensorStateChangeCallback) {
         ALOGI("ExynosPrimaryDisplay: %s: %d", __func__, active);
+        ATRACE_NAME("onProximitySensorStateChanged(HAL)");
         mProximitySensorStateChangeCallback->onProximitySensorStateChanged(active);
     }
 }

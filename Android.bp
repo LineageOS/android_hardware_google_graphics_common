@@ -1,8 +1,47 @@
 soong_namespace {
-    imports: ["hardware/google/gchips"]
+    imports: ["hardware/google/gchips"],
 }
 
 package {
     // See: http://go/android-license-faq
     default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+cc_defaults {
+    name: "google_graphics_cc_default",
+
+    proprietary: true,
+    cflags: [
+        "-DUSES_GSCALER",
+    ] + select(soong_config_variable("google_graphics", "hwc_no_support_skip_validate"), {
+        true: ["-DHWC_NO_SUPPORT_SKIP_VALIDATE"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "hwc_support_color_transform"), {
+        true: ["-DHWC_SUPPORT_COLOR_TRANSFORM"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "hwc_support_render_intent"), {
+        true: ["-DHWC_SUPPORT_RENDER_INTENT"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "board_uses_virtual_display"), {
+        true: ["-DUSES_VIRTUAL_DISPLAY"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "board_uses_dt"), {
+        true: ["-DUSES_DT"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "board_uses_decon_64bit_address"), {
+        true: ["-DUSES_DECON_64BIT_ADDRESS"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "board_uses_hdrui_gles_conversion"), {
+        true: ["-DUSES_HDR_GLES_CONVERSION"],
+        default: [],
+    }) + select(soong_config_variable("google_graphics", "uses_idisplay_intf_sec"), {
+        true: ["-DUSES_IDISPLAY_INTF_SEC"],
+        default: [],
+    }),
+
+    arch: {
+        arm64: {
+            cflags: ["-DUSES_ARCH_ARM64"],
+        },
+    },
 }

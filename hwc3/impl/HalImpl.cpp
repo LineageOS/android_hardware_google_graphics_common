@@ -1321,4 +1321,9 @@ int32_t HalImpl::setRefreshRateChangedCallbackDebugEnabled(int64_t display, bool
     return halDisplay->setRefreshRateChangedCallbackDebugEnabled(enabled);
 }
 
+int32_t HalImpl::getMaxLayerPictureProfiles([[maybe_unused]] int64_t display,
+                                            [[maybe_unused]] int32_t* outMaxProfiles) {
+    return HWC2_ERROR_UNSUPPORTED;
+}
+
 } // namespace aidl::android::hardware::graphics::composer3::impl

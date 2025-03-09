@@ -132,12 +132,13 @@ float DrmMode::v_refresh() const {
   if (v_total_ == 0 || h_total_ == 0) {
     return 0.0f;
   }
-  return clock_ / (float)(v_total_ * h_total_) * 1000.0f;
+  auto v_refresh = static_cast<float>(clock_) / (float)(v_total_ * h_total_) * 1000.0F;
+  return v_scan_ > 1 ? v_refresh / v_scan_ : v_refresh;
 }
 
 float DrmMode::te_frequency() const {
   auto freq = v_refresh();
-  if (is_vrr_mode()) {
+  if (type_ & DRM_MODE_TYPE_VRR) {
     if (HasFlag(flags_, DRM_MODE_FLAG_TE_FREQ_X2)) {
       freq *= 2;
     } else if (HasFlag(flags_, DRM_MODE_FLAG_TE_FREQ_X4)) {
@@ -147,6 +148,8 @@ float DrmMode::te_frequency() const {
         return 0.0f;
       }
     }
+  } else if (v_scan_ > 1) {
+    freq *= v_scan_;
   }
   return freq;
 }

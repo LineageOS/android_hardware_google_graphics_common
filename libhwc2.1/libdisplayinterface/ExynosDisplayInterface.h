@@ -101,12 +101,14 @@ class ExynosDisplayInterface {
         virtual void setProductId(uint8_t __unused edid10, uint8_t __unused edid11){};
         virtual uint32_t getProductId() { return 0; }
 
-        virtual int32_t swapCrtcs(ExynosDisplay* anotherDisplay) { return HWC2_ERROR_UNSUPPORTED; }
+        virtual int32_t swapCrtcs(ExynosDisplay* __unused anotherDisplay) {
+            return HWC2_ERROR_UNSUPPORTED;
+        }
         virtual ExynosDisplay* borrowedCrtcFrom() { return nullptr; }
         virtual void clearOldCrtcBlobs() {}
 
-        virtual int32_t uncacheLayerBuffers(const ExynosLayer* layer,
-                                            const std::vector<buffer_handle_t>& buffers) {
+        virtual int32_t uncacheLayerBuffers(const ExynosLayer* __unused layer,
+                                            const std::vector<buffer_handle_t>& __unused buffers) {
             return NO_ERROR;
         }
 

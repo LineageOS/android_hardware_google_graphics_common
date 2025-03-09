@@ -4,7 +4,7 @@
 #include <log/log.h>
 
 #include "metadata.h"
-#include "utils.h"
+#include "utils-internal.h"
 
 namespace pixel::graphics::mapper {
 

@@ -1,0 +1,73 @@
+// Copyright (C) 2013 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    // See: http://go/android-license-faq
+    default_applicable_licenses: [
+        "hardware_google_graphics_common_libmemtrack_license",
+    ],
+}
+
+license {
+    name: "hardware_google_graphics_common_libmemtrack_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+    ],
+    license_text: [
+        "NOTICE",
+    ],
+}
+
+// HAL module implementation stored in
+// hw/<POWERS_HARDWARE_MODULE_ID>.<ro.hardware>.so
+
+soong_config_module_type {
+    name: "memtrack_cc_library_shared",
+    module_type: "cc_library_shared",
+    config_namespace: "ANDROID",
+    value_variables: ["target_board_platform"],
+    properties: [
+        "name",
+    ],
+}
+
+memtrack_cc_library_shared {
+    name: "memtrack.target_board_platform",
+    relative_install_path: "hw",
+    header_libs: [
+        "libcutils_headers",
+        "libsystem_headers",
+        "libhardware_headers",
+    ],
+    shared_libs: [
+        "liblog",
+        "libion_google",
+    ],
+    srcs: [
+        "memtrack_exynos.cpp",
+        "mali.cpp",
+        "ion.cpp",
+        "dmabuf.cpp",
+    ],
+    soong_config_variables: {
+        target_board_platform: {
+            name: "memtrack.%s",
+            conditions_default: {
+                name: "memtrack.target_board_platform",
+            },
+        },
+    },
+    proprietary: true,
+}

@@ -1682,8 +1682,7 @@ bool ExynosMPP::canSkipProcessing()
         (mLogicalType == MPP_LOGICAL_G2D_COMBO)) {
         dst = mAssignedDisplay->mExynosCompositionInfo.mDstImg;
     }
-    return ((needDstBufRealloc(dst, mCurrentDstBuf) == false) & canUsePrevFrame());
-
+    return ((needDstBufRealloc(dst, mCurrentDstBuf) == false) && canUsePrevFrame());
 }
 
 /**

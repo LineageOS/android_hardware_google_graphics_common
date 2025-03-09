@@ -107,7 +107,7 @@ public:
         const HistogramConfig mRequestedConfig;
         Status_t mStatus = Status_t::INITIALIZED;
         int mChannelId = -1;
-        std::list<const BlobInfo> mBlobsList;
+        std::list<BlobInfo> mBlobsList;
         std::list<std::weak_ptr<ConfigInfo>>::iterator mInactiveListIt;
         ConfigInfo(const HistogramConfig& histogramConfig) : mRequestedConfig(histogramConfig) {}
         void dump(String8& result, const char* prefix = "") const;
@@ -385,8 +385,8 @@ protected:
 
     mutable std::mutex mHistogramMutex;
     std::unordered_map<AIBinder*, TokenInfo> mTokenInfoMap GUARDED_BY(mHistogramMutex);
-    std::list<const uint8_t> mFreeChannels GUARDED_BY(mHistogramMutex); // free channel list
-    std::set<const uint8_t> mUsedChannels GUARDED_BY(mHistogramMutex);  // all - free - reserved
+    std::list<uint8_t> mFreeChannels GUARDED_BY(mHistogramMutex); // free channel list
+    std::set<uint8_t> mUsedChannels GUARDED_BY(mHistogramMutex);  // all - free - reserved
     std::vector<ChannelInfo> mChannels GUARDED_BY(mHistogramMutex);
     std::list<std::weak_ptr<ConfigInfo>> mInactiveConfigItList GUARDED_BY(mHistogramMutex);
 
@@ -664,7 +664,7 @@ protected:
      * @channelId the channel id to be cleanup.
      * @return next iterator of mUsedChannels after deletion.
      */
-    std::set<const uint8_t>::iterator cleanupChannelInfo(const uint8_t channelId)
+    std::set<uint8_t>::iterator cleanupChannelInfo(const uint8_t channelId)
             REQUIRES(mHistogramMutex) EXCLUDES(mInitDrmDoneMutex, mBlobIdDataMutex);
 
     /**
@@ -722,7 +722,7 @@ protected:
      * @displayActiveV current display active vertical size (in pixel)
      * @return the blob id if found, 0 otherwise.
      */
-    uint32_t getMatchBlobId(std::list<const BlobInfo>& blobsList, const int displayActiveH,
+    uint32_t getMatchBlobId(std::list<BlobInfo>& blobsList, const int displayActiveH,
                             const int displayActiveV, bool& isPositionChanged) const
             REQUIRES(mHistogramMutex) EXCLUDES(mInitDrmDoneMutex, mBlobIdDataMutex);
 
@@ -734,8 +734,8 @@ protected:
      *
      * @return the first blod id from the blobsList if any, else return 0.
      */
-    uint32_t getActiveBlobId(const std::list<const BlobInfo>& blobsList) const
-            REQUIRES(mHistogramMutex) EXCLUDES(mInitDrmDoneMutex, mBlobIdDataMutex);
+    uint32_t getActiveBlobId(const std::list<BlobInfo>& blobsList) const REQUIRES(mHistogramMutex)
+            EXCLUDES(mInitDrmDoneMutex, mBlobIdDataMutex);
 
     /**
      * createDrmConfig

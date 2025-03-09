@@ -61,7 +61,8 @@ public:
         std::priority_queue<VrrControllerEvent> q;
         while (!mPriorityQueue.empty()) {
             const auto& it = mPriorityQueue.top();
-            if (it.mEventType == eventType) {
+            if ((static_cast<int32_t>(it.mEventType) & static_cast<int32_t>(eventType)) ==
+                static_cast<int32_t>(eventType)) {
                 ++res;
             }
             q.push(it);

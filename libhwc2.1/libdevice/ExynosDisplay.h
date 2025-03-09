@@ -1405,9 +1405,11 @@ class ExynosDisplay {
         virtual int32_t setDisplayTemperature(const int __unused temperature) { return NO_ERROR; }
 
         virtual int32_t registerRefreshRateChangeListener(
-                std::shared_ptr<RefreshRateChangeListener> listener) {
+                std::shared_ptr<RefreshRateChangeListener> __unused listener) {
             return NO_ERROR;
         }
+
+        virtual void setForceColorUpdate(bool __unused force) { return; }
 
     protected:
         virtual bool getHDRException(ExynosLayer *layer);

@@ -47,7 +47,7 @@ class DrmMode {
   bool operator==(const drmModeModeInfo &m) const;
   void ToDrmModeModeInfo(drm_mode_modeinfo *m) const;
 
-  inline bool is_vrr_mode() const { return (type_ & DRM_MODE_TYPE_VRR); };
+  inline bool is_vrr_mode() const { return (type_ & DRM_MODE_TYPE_VRR) || (v_scan_ > 0); };
   inline bool is_ns_mode() const { return (flags_ & DRM_MODE_FLAG_NS); };
 
   uint32_t id() const;

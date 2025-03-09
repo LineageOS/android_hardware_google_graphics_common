@@ -51,8 +51,13 @@ enum class VrrControllerEventType {
     kAodRefreshRateCalculatorUpdate = kCallbackEventMask + (1 << 4),
     kExitIdleRefreshRateCalculatorUpdate = kCallbackEventMask + (1 << 5),
     kStaticticUpdate = kCallbackEventMask + (1 << 6),
-    kMinLockTimeForPeakRefreshRate = kCallbackEventMask + (1 << 7),
     kCallbackEventMax = kCallbackEventMask + (1 << 27),
+    // Minimum refresh rate control events.
+    kMinimumRefreshRateControlEventMask = 0x40000000,
+    kMinimumRefreshRateWaitForConfigTimeout = kMinimumRefreshRateControlEventMask + (1 << 0),
+    kMinimumRefreshRateAlignWithPresent = kMinimumRefreshRateControlEventMask + (1 << 1),
+    kMinLockTimeForPeakRefreshRate =
+            ((kMinimumRefreshRateControlEventMask + (1 << 2)) | kCallbackEventMask),
     // Sensors, outer events...
 };
 

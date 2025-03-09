@@ -143,6 +143,12 @@ public:
     ndk::ScopedAStatus notifyExpectedPresent(int64_t display,
                                              const ClockMonotonicTimestamp& expectedPresentTime,
                                              int32_t frameIntervalNs) override;
+    ndk::ScopedAStatus getMaxLayerPictureProfiles(int64_t display,
+                                                  int32_t* outMaxProfiles) override;
+    ndk::ScopedAStatus startHdcpNegotiation(int64_t display,
+                                            const drm::HdcpLevels& levels) override;
+    ndk::ScopedAStatus getLuts(int64_t display, const std::vector<Buffer>&,
+                               std::vector<Luts>*) override;
 
 protected:
     ::ndk::SpAIBinder createBinder() override;
