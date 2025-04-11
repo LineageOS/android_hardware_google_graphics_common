@@ -173,6 +173,8 @@ enum {
     eMPPUnsupportedDynamicMeta    =     1ULL << 32,
     eMPPSatisfiedRestriction      =     1ULL << 33,
     eMPPExeedHWResource           =     1ULL << 34,
+    eMPPExceedCanvasWidth         =     1ULL << 35,
+    eMPPExceedCanvasHeight        =     1ULL << 36,
 };
 
 enum {
